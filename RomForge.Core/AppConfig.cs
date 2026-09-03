@@ -42,6 +42,13 @@ public class PatchConfig : ViewModelBase
         get => _autoCompress;
         set { SetProperty(ref _autoCompress, value); }
     }
+
+    private bool _openOutputFolderWhenCompleted = true;
+    public bool OpenOutputFolderWhenCompleted
+    {
+        get => _openOutputFolderWhenCompleted;
+        set { SetProperty(ref _openOutputFolderWhenCompleted, value); }
+    }
 }
 
 public class ChdmanConfig : ViewModelBase

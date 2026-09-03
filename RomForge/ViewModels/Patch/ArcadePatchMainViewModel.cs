@@ -1,6 +1,7 @@
 ﻿using Common;
 using Common.WPF.ViewModels;
 using NSW.WPF.Services;
+using RomForge.Core;
 using RomForge.Core.Models;
 using RomForge.Core.Models.Patch;
 using RomForge.Core.Services.Patch;
@@ -15,6 +16,8 @@ namespace RomForge.ViewModels.Patch;
 public class ArcadePatchMainViewModel : ToolTabViewModel, IPatchViewModel
 {
     public ObservableCollection<LogEntry> LogEntries { get; } = [];
+
+    public event EventHandler? PatchCompleted;
 
     public ObservableCollection<ArcadeMatchItem> MatchItems { get; } = [];
     public ObservableCollection<PatchEntry> AllPatchEntries { get; } = [];
@@ -163,9 +166,12 @@ public class ArcadePatchMainViewModel : ToolTabViewModel, IPatchViewModel
         {
             await PatchService.ApplyPatchedZipAsync(SourcePath, outputZipPath, patchesByEntryName, progressReporter, ct);
 
-            outputDir.OpenFolder();
-
             Log($"패치 완료: {SourcePath}", LogLevel.Ok);
+
+            if (AppConfig.Instance.Patch.OpenOutputFolderWhenCompleted)
+                outputDir.OpenFolder();
+            else
+                PatchCompleted?.Invoke(this, EventArgs.Empty);
         }
         catch (OperationCanceledException)
         {

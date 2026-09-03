@@ -25,6 +25,8 @@ public class NormalPatchMainViewModel : ToolTabViewModel, IPatchViewModel
 
     public System.Collections.ObjectModel.ObservableCollection<LogEntry> LogEntries { get; } = [];
 
+    public event EventHandler? PatchCompleted;
+
     public string? SourcePath
     {
         get => _sourcePath;
@@ -182,7 +184,10 @@ public class NormalPatchMainViewModel : ToolTabViewModel, IPatchViewModel
 
             Log($"패치 완료: {Path.GetFileName(outputPath)} ({stopwatch.Elapsed:mm\\:ss})", LogLevel.Ok);
 
-            outputDir.OpenFolder();
+            if (AppConfig.Instance.Patch.OpenOutputFolderWhenCompleted)
+                outputDir.OpenFolder();
+            else
+                PatchCompleted?.Invoke(this, EventArgs.Empty);
         }
         catch (OperationCanceledException)
         {

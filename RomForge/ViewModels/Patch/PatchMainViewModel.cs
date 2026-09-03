@@ -18,6 +18,8 @@ public class PatchMainViewModel : MultiToolTabViewModel
 
     public ICommand CalculateHashCommand { get; }
 
+    public event EventHandler? PatchCompleted;
+
     private IPatchViewModel? SelectedPatchVM => SelectedTool as IPatchViewModel;
 
     public PatchMainViewModel(Action<string> navigateToHashAction)
@@ -27,6 +29,9 @@ public class PatchMainViewModel : MultiToolTabViewModel
         RunCommand = new RelayCommand(async _ => await RunAsync());
         CancelCommand = new RelayCommand(_ => Cancel());
         ClearCommand = new RelayCommand(_ => Clear());
+
+        NormalVM.PatchCompleted += OnPatchCompleted;
+        ArcadeVM.PatchCompleted += OnPatchCompleted;
 
         CalculateHashCommand = new RelayCommand(
             execute: _ =>
@@ -43,6 +48,8 @@ public class PatchMainViewModel : MultiToolTabViewModel
 
         InitializeMultiTools();
     }
+
+    private void OnPatchCompleted(object? sender, EventArgs e) => PatchCompleted?.Invoke(this, EventArgs.Empty);
 
     private async Task RunAsync()
     {

@@ -6,11 +6,19 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls.Primitives;
 using System.Windows.Interop;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Shell;
 
 namespace RomForge.Views;
 
 public partial class MainWindow : Window
 {
+    private static readonly ImageSource PatchCompletedOverlay = CreatePatchCompletedOverlay();
+    private static readonly ImageSource PatchCompletedWindowIcon = CreatePatchCompletedWindowIcon();
+
+    private bool _hasPatchCompletionNotification;
 
     private MainViewModel ViewModel { get; } = new();
 
@@ -19,8 +27,83 @@ public partial class MainWindow : Window
         DataContext = ViewModel;
         InitializeComponent();
         Closing += MainWindow_Closing;
+        Activated += MainWindow_Activated;
+        PreviewMouseDown += MainWindow_PreviewMouseDown;
+        ViewModel.PatchVM.PatchCompleted += PatchVM_PatchCompleted;
 
         RestoreWindowState();
+    }
+
+    private static ImageSource CreatePatchCompletedOverlay()
+    {
+        var drawing = new DrawingGroup();
+        drawing.Children.Add(new GeometryDrawing(
+            new SolidColorBrush(Color.FromRgb(245, 158, 11)),
+            new Pen(Brushes.White, 1.2),
+            new EllipseGeometry(new Point(8, 8), 7, 7)));
+        drawing.Children.Add(new GeometryDrawing(
+            null,
+            new Pen(Brushes.White, 2),
+            Geometry.Parse("M 4 8 L 7 11 L 12 5")));
+        drawing.Freeze();
+
+        var image = new DrawingImage(drawing);
+        image.Freeze();
+        return image;
+    }
+
+    private static ImageSource CreatePatchCompletedWindowIcon()
+    {
+        var processPath = Environment.ProcessPath ?? throw new InvalidOperationException("실행 파일 경로를 확인할 수 없습니다.");
+        using var appIcon = System.Drawing.Icon.ExtractAssociatedIcon(processPath)
+            ?? throw new InvalidOperationException("실행 파일 아이콘을 읽을 수 없습니다.");
+
+        var appIconImage = Imaging.CreateBitmapSourceFromHIcon(
+            appIcon.Handle,
+            Int32Rect.Empty,
+            BitmapSizeOptions.FromWidthAndHeight(16, 16));
+        appIconImage.Freeze();
+
+        var drawing = new DrawingGroup();
+        drawing.Children.Add(new ImageDrawing(appIconImage, new Rect(0, 0, 16, 16)));
+        drawing.Children.Add(new ImageDrawing(PatchCompletedOverlay, new Rect(8, 8, 8, 8)));
+        drawing.Freeze();
+
+        var image = new DrawingImage(drawing);
+        image.Freeze();
+        return image;
+    }
+
+    private void PatchVM_PatchCompleted(object? sender, EventArgs e)
+    {
+        if (Dispatcher.CheckAccess())
+            ShowPatchCompletionNotification();
+        else
+            _ = Dispatcher.BeginInvoke(ShowPatchCompletionNotification);
+    }
+
+    private void ShowPatchCompletionNotification()
+    {
+        _hasPatchCompletionNotification = true;
+        TaskbarItemInfo ??= new TaskbarItemInfo();
+        TaskbarItemInfo.Overlay = PatchCompletedOverlay;
+        TaskbarItemInfo.Description = "패치 완료";
+        Icon = PatchCompletedWindowIcon;
+    }
+
+    private void MainWindow_Activated(object? sender, EventArgs e) => ClearPatchCompletionNotification();
+
+    private void MainWindow_PreviewMouseDown(object sender, MouseButtonEventArgs e) => ClearPatchCompletionNotification();
+
+    private void ClearPatchCompletionNotification()
+    {
+        if (!_hasPatchCompletionNotification)
+            return;
+
+        _hasPatchCompletionNotification = false;
+        TaskbarItemInfo!.Overlay = null;
+        TaskbarItemInfo.Description = null;
+        Icon = null;
     }
 
     private void RestoreWindowState()

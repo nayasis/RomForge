@@ -11,6 +11,9 @@ public class PatchSettingsMainViewModel : ToolTabViewModel
         {
             if (e.PropertyName == nameof(PatchConfig.AutoCompress))
                 OnPropertyChanged(nameof(AutoCompress));
+
+            if (e.PropertyName == nameof(PatchConfig.OpenOutputFolderWhenCompleted))
+                OnPropertyChanged(nameof(OpenOutputFolderWhenCompleted));
         };
     }
 
@@ -20,6 +23,16 @@ public class PatchSettingsMainViewModel : ToolTabViewModel
         set
         {
             AppConfig.Instance.Patch.AutoCompress = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public bool OpenOutputFolderWhenCompleted
+    {
+        get => AppConfig.Instance.Patch.OpenOutputFolderWhenCompleted;
+        set
+        {
+            AppConfig.Instance.Patch.OpenOutputFolderWhenCompleted = value;
             OnPropertyChanged();
         }
     }
