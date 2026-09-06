@@ -49,6 +49,13 @@ public class PatchConfig : ViewModelBase
         get => _openOutputFolderWhenCompleted;
         set { SetProperty(ref _openOutputFolderWhenCompleted, value); }
     }
+
+    private bool _createElPackageWhenCompleted;
+    public bool CreateElPackageWhenCompleted
+    {
+        get => _createElPackageWhenCompleted;
+        set { SetProperty(ref _createElPackageWhenCompleted, value); }
+    }
 }
 
 public class ChdmanConfig : ViewModelBase
