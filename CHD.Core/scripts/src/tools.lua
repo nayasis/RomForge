@@ -100,45 +100,47 @@ configuration { }
 
 strip()
 
--- chdman_dll
 project("chdman_dll")
 uuid ("7d948868-42db-432a-9bb5-70ce5c5f4621")
 kind "SharedLib"
-defines { "CHDMAN_DLL" } 
+defines { "CHDMAN_DLL" }
 buildoptions { "-Wno-unused-function" }
-objdir(MAME_DIR .. "mingw-gcc/obj/x64/Release/chdman_dll")
 
 if _OPTIONS["SEPARATE_BIN"]~="1" then
-        targetdir(MAME_DIR)
+	targetdir(MAME_DIR)
 end
+
 links {
-        "utils",
-        ext_lib("expat"),
-        "7z",
-        "ocore_" .. _OPTIONS["osd"],
-        ext_lib("zlib"),
-        ext_lib("zstd"),
-        ext_lib("flac"),
-        ext_lib("utf8proc"),
+	"utils",
+	ext_lib("expat"),
+	"7z",
+	"ocore_" .. _OPTIONS["osd"],
+	ext_lib("zlib"),
+	ext_lib("zstd"),
+	ext_lib("flac"),
+	ext_lib("utf8proc"),
 }
+
 includedirs {
-        MAME_DIR .. "src/osd",
-        MAME_DIR .. "src/lib/util",
-        MAME_DIR .. "3rdparty",
+	MAME_DIR .. "src/osd",
+	MAME_DIR .. "src/lib/util",
+	MAME_DIR .. "3rdparty",
+	ext_includedir("flac"),
 }
-includedirs {
-        ext_includedir("flac"),
-}
+
 files {
-        MAME_DIR .. "src/tools/chdman.cpp",
-        MAME_DIR .. "src/tools/chdman_wrapper.cpp",
-        GEN_DIR .. "version.cpp",
+	MAME_DIR .. "src/tools/chdman.cpp",
+	MAME_DIR .. "src/tools/chdman_wrapper.cpp",
+	GEN_DIR .. "version.cpp",
 }
+
 configuration { "mingw*" or "vs*" }
-        targetextension ".dll"
+	targetextension ".dll"
+
 configuration { }
 
 strip()
+
 --------------------------------------------------
 -- jedutil
 --------------------------------------------------

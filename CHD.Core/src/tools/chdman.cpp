@@ -139,16 +139,16 @@ typedef std::unordered_map<std::string, std::string *> parameters_map;
 template <typename Format, typename... Params>
 [[noreturn]] static void report_error(int error, Format &&fmt, Params &&...args);
 
-void do_info(parameters_map &params); // 변경 포인트 static->void
+void do_info(parameters_map &params);
 static void do_verify(parameters_map &params);
 static void do_create_raw(parameters_map &params);
 static void do_create_hd(parameters_map &params);
-void do_create_cd(parameters_map &params); // 변경 포인트 static->void
-void do_create_dvd(parameters_map &params);  // 변경 포인트 static->void
+void do_create_cd(parameters_map &params);
+void do_create_dvd(parameters_map &params);
 static void do_create_ld(parameters_map &params);
 static void do_copy(parameters_map &params);
-void do_extract_raw(parameters_map &params); // 변경 포인트 static->void
-void do_extract_cd(parameters_map &params); // 변경 포인트 static->void
+void do_extract_raw(parameters_map &params);
+void do_extract_cd(parameters_map &params);
 static void do_extract_ld(parameters_map &params);
 static void do_add_metadata(parameters_map &params);
 static void do_del_metadata(parameters_map &params);
@@ -659,16 +659,12 @@ private:
 // timing
 static clock_t lastprogress = 0;
 
-// 변경 포인트 시작
-
 #ifdef CHDMAN_DLL
 #include "chdman_wrapper.h"
 extern ProgressCallback g_progress_cb;
 extern LogCallback g_log_cb;
 extern volatile bool g_cancel_requested;
 #endif
-
-// 변경 포인트 종료
 
 // default compressors
 static const std::array<chd_codec_type, 4> s_no_compression = { CHD_CODEC_NONE, CHD_CODEC_NONE, CHD_CODEC_NONE, CHD_CODEC_NONE };
@@ -927,19 +923,23 @@ static const command_description s_commands[] =
 // hard disk templates
 static const hd_template s_hd_templates[] =
 {
-	{ "Conner",     "CFA170A",    332, 16, 63, 512 }, //  163 MB
-	{ "Rodime",     "R0201",      321,  2, 16, 512 }, //    5 MB
-	{ "Rodime",     "R0202",      321,  4, 16, 512 }, //   10 MB
-	{ "Rodime",     "R0203",      321,  6, 16, 512 }, //   15 MB
-	{ "Rodime",     "R0204",      321,  8, 16, 512 }, //   20 MB
-	{ "Seagate",    "ST-213",     615,  2, 17, 512 }, //   10 MB
-	{ "Seagate",    "ST-225",     615,  4, 17, 512 }, //   20 MB
-	{ "Seagate",    "ST-251",     820,  6, 17, 512 }, //   40 MB
-	{ "Seagate",    "ST-3600N",  1877,  7, 76, 512 }, //  525 MB
-	{ "Maxtor",     "LXT-213S",  1314,  7, 53, 512 }, //  200 MB
-	{ "Maxtor",     "LXT-340S",  1574,  7, 70, 512 }, //  340 MB
-	{ "Maxtor",     "MXT-540SL", 2466,  7, 87, 512 }, //  540 MB
-	{ "Micropolis", "1528",      2094, 15, 83, 512 }, // 1342 MB
+	{ "Conner",     "CFA170A",               332, 16, 63, 512 }, //   163 MB, IDE (ATA)
+	{ "Rodime",     "R0201",                 321,  2, 16, 512 }, //     5 MB, ST-506/MFM
+	{ "Rodime",     "R0202",                 321,  4, 16, 512 }, //    10 MB, ST-506/MFM
+	{ "Rodime",     "R0203",                 321,  6, 16, 512 }, //    15 MB, ST-506/MFM
+	{ "Rodime",     "R0204",                 321,  8, 16, 512 }, //    20 MB, ST-506/MFM
+	{ "Seagate",    "ST-213",                615,  2, 17, 512 }, //    10 MB, ST-506/MFM
+	{ "Seagate",    "ST-225",                615,  4, 17, 512 }, //    20 MB, ST-506/MFM
+	{ "Seagate",    "ST-251",                820,  6, 17, 512 }, //    40 MB, ST-506/MFM
+	{ "Seagate",    "ST-3600N",             1877,  7, 76, 512 }, //   525 MB, SCSI
+	{ "Maxtor",     "LXT-213S",             1314,  7, 53, 512 }, //   200 MB, SCSI
+	{ "Maxtor",     "LXT-340S",             1574,  7, 70, 512 }, //   340 MB, SCSI
+	{ "Maxtor",     "MXT-540SL",            2466,  7, 87, 512 }, //   540 MB, SCSI
+	{ "Micropolis", "1528",                 2094, 15, 83, 512 }, //  1342 MB, SCSI-2
+	{ "Quantum",    "Fireball CR 4.3 AT",  14848,  9, 63, 512 }, //  4110 MB (4.3 GB), Ultra ATA/66 (ATA-5)
+	{ "Quantum",    "Fireball CR 6.4 AT",  13328, 15, 63, 512 }, //  6149 MB (6.4 GB), Ultra ATA/66 (ATA-5)
+	{ "Quantum",    "Fireball CR 8.4 AT",  16383, 16, 63, 512 }, //  8063 MB (8.4 GB), Ultra ATA/66 (ATA-5)
+	{ "Quantum",    "Fireball CR 13.0 AT", 25228, 16, 63, 512 }, // 12416 MB (13.0 GB), Ultra ATA/66 (ATA-5)
 };
 
 
@@ -955,9 +955,16 @@ static const hd_template s_hd_templates[] =
 template <typename Format, typename... Params>
 static void report_error(int error, Format &&fmt, Params &&...args)
 {
+
+#ifdef CHDMAN_DLL
+	std::string msg = string_format(std::forward<Format>(fmt), std::forward<Params>(args)...);
+	if (g_log_cb)
+		g_log_cb(msg.c_str());
+#else
 	// output to stderr
 	util::stream_format(std::cerr, std::forward<Format>(fmt), std::forward<Params>(args)...);
 	std::cerr << std::endl;
+#endif
 
 	// reset time for progress and return the error
 	lastprogress = 0;
@@ -972,37 +979,34 @@ static void report_error(int error, Format &&fmt, Params &&...args)
 template <typename Format, typename... Params>
 static void progress(bool forceit, Format &&fmt, Params &&...args)
 {
-    clock_t curtime = clock();
-    if (!forceit && lastprogress != 0 && curtime - lastprogress < CLOCKS_PER_SEC / 2)
-        return;
-    lastprogress = curtime;
+	// skip if it hasn't been long enough
+	clock_t curtime = clock();
+	if (!forceit && lastprogress != 0 && curtime - lastprogress < CLOCKS_PER_SEC / 2)
+		return;
+	lastprogress = curtime;
 
-// 변경 포인트 시작
 
 #ifdef CHDMAN_DLL
-    if (g_cancel_requested)
-        throw std::runtime_error("Cancelled");
-    std::string msg = string_format(std::forward<Format>(fmt), std::forward<Params>(args)...);
-    if (g_progress_cb)
-    {
-        auto pos = msg.find('%');
-        if (pos != std::string::npos && pos > 0)
-        {
-            auto start = msg.rfind(' ', pos - 1);
-            if (start != std::string::npos)
-            {
-                float pct = std::stof(msg.substr(start + 1, pos - start - 1));
-                g_progress_cb((int)pct);
-            }
-        }
-    }
+	if (g_cancel_requested)
+		throw std::runtime_error("Cancelled");
+	std::string msg = string_format(std::forward<Format>(fmt), std::forward<Params>(args)...);
+	if (g_progress_cb)
+	{
+		auto pos = msg.find('%');
+		if (pos != std::string::npos && pos > 0)
+		{
+			auto start = msg.rfind(' ', pos - 1);
+			if (start != std::string::npos)
+			{
+				float pct = std::stof(msg.substr(start + 1, pos - start - 1));
+				g_progress_cb((int)pct);
+			}
+		}
+	}
 #else
-    util::stream_format(std::cerr, std::forward<Format>(fmt), std::forward<Params>(args)...);
-    std::cerr << std::flush;
+	util::stream_format(std::cerr, std::forward<Format>(fmt), std::forward<Params>(args)...);
+	std::cerr << std::flush;
 #endif
-
-// 변경 포인트 종료
-
 }
 
 
@@ -2325,11 +2329,12 @@ void do_create_dvd(parameters_map &params)
 		// compress it generically
 		compress_common(*chd);
 	}
-catch (...)
-{
-    osd_file::remove(*output_chd_str);
-    throw;
-}
+	catch (...)
+	{
+		// delete the output file
+		osd_file::remove(*output_chd_str);
+		throw;
+	}
 }
 
 
@@ -2700,7 +2705,7 @@ void do_extract_cd(parameters_map &params)
 
 	// GDIs will always output as split bin
 	bool is_splitbin = mode == MODE_GDI || params.find(OPTION_OUTPUT_SPLITBIN) != params.end();
-	if (!is_splitbin && mode == MODE_CUEBIN && (cdrom->is_gdrom() || toc.numtrks > 1))
+	if (!is_splitbin && cdrom->is_gdrom() && mode == MODE_CUEBIN)
 	{
 		// GD-ROM cue/bin is in Redump format which should always be split by tracks
 		util::stream_format(std::cout, "Warning: --%s is required for this specific combination of input disc type and output format, enabling automatically\n", OPTION_OUTPUT_SPLITBIN);
@@ -3427,12 +3432,14 @@ static void do_dump_metadata(parameters_map &params)
 static void do_list_templates(parameters_map &params)
 {
 	util::stream_format(std::cout, "\n");
-	util::stream_format(std::cout, "ID  Manufacturer  Model           Cylinders  Heads  Sectors  Sector Size  Total Size\n");
-	util::stream_format(std::cout, "------------------------------------------------------------------------------------\n");
+	util::stream_format(std::cout, "ID  Manufacturer  Model               Cylinders  Heads  Sectors  Sector Size  Total Size\n");
+	util::stream_format(std::cout, "----------------------------------------------------------------------------------------\n");
 
 	for (int id = 0; id < std::size(s_hd_templates); id++)
 	{
-		util::stream_format(std::cout, "%2d  %-13s %-15s %9d  %5d  %7d  %11d  %7d MB\n",
+		uint32_t size = ((uint64_t)s_hd_templates[id].cylinders * s_hd_templates[id].heads * s_hd_templates[id].sectors * s_hd_templates[id].sector_size) / 1024 / 1024;
+
+		util::stream_format(std::cout, "%2d  %-13s %-19s %9d  %5d  %7d  %11d  %7d MB\n",
 			id,
 			s_hd_templates[id].manufacturer,
 			s_hd_templates[id].model,
@@ -3440,7 +3447,7 @@ static void do_list_templates(parameters_map &params)
 			s_hd_templates[id].heads,
 			s_hd_templates[id].sectors,
 			s_hd_templates[id].sector_size,
-			(s_hd_templates[id].cylinders * s_hd_templates[id].heads * s_hd_templates[id].sectors * s_hd_templates[id].sector_size) / 1024 / 1024
+			size
 		);
 	}
 }
@@ -3451,7 +3458,6 @@ static void do_list_templates(parameters_map &params)
 //-------------------------------------------------
 
 #ifndef CHDMAN_DLL
-
 int CLIB_DECL main(int argc, char *argv[])
 {
 	const std::vector<std::string> args = osd_get_command_line(argc, argv);
@@ -3573,5 +3579,4 @@ int CLIB_DECL main(int argc, char *argv[])
 	// print generic help if nothing found
 	return print_help(args[0]);
 }
-
 #endif // CHDMAN_DLL

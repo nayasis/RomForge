@@ -23,10 +23,11 @@
 #include "osdfile.h"
 #include "path.h"
 #include "strformat.h"
-#include "strconv.h"  // 변경 포인트
+#include "strconv.h"
 
 #include <cassert>
 #include <cstdlib>
+#include <cstring>
 #include <tuple>
 
 
@@ -1849,11 +1850,12 @@ std::error_condition cdrom_file::parse_nero(std::string_view tocfname, toc &outt
 	int done = 0;
 
 	std::string path = std::string(tocfname);
-#ifdef _WIN32	// 변경 포인트 시작 한글 경로 오류 수정
-	FILE* infile = _wfopen(osd::text::to_wstring(path).c_str(), L"rb");
+
+#ifdef _WIN32
+	FILE *infile = _wfopen(osd::text::to_wstring(path).c_str(), L"rb");
 #else
-	FILE* infile = fopen(path.c_str(), "rb");
-#endif			// 변경 포인트 종료 한글 경로 오류 수정
+	FILE *infile = fopen(path.c_str(), "rb");
+#endif
 	if (!infile)
 	{
 		return std::error_condition(errno, std::generic_category());
@@ -2031,11 +2033,12 @@ std::error_condition cdrom_file::parse_nero(std::string_view tocfname, toc &outt
 std::error_condition cdrom_file::parse_iso(std::string_view tocfname, toc &outtoc, track_input_info &outinfo)
 {
 	std::string path = std::string(tocfname);
-#ifdef _WIN32	// 변경 포인트 시작 한글 경로 오류 수정
-	FILE* infile = _wfopen(osd::text::to_wstring(path).c_str(), L"rb");
+
+#ifdef _WIN32
+	FILE *infile = _wfopen(osd::text::to_wstring(path).c_str(), L"rb");
 #else
-	FILE* infile = fopen(path.c_str(), "rb");
-#endif			// 변경 포인트 종료 한글 경로 오류 수정
+	FILE *infile = fopen(path.c_str(), "rb");
+#endif
 	if (!infile)
 	{
 		return std::error_condition(errno, std::generic_category());
@@ -2126,11 +2129,12 @@ std::error_condition cdrom_file::parse_gdi(std::string_view tocfname, toc &outto
 	int trackcnt = 0;
 
 	std::string path = std::string(tocfname);
-#ifdef _WIN32	// 변경 포인트 시작 한글 경로 오류 수정
-	FILE* infile = _wfopen(osd::text::to_wstring(path).c_str(), L"rb");
+
+#ifdef _WIN32
+	FILE *infile = _wfopen(osd::text::to_wstring(path).c_str(), L"rb");
 #else
-	FILE* infile = fopen(path.c_str(), "rb");
-#endif			// 변경 포인트 종료 한글 경로 오류 수정
+	FILE *infile = fopen(path.c_str(), "rb");
+#endif
 	if (!infile)
 	{
 		return std::error_condition(errno, std::generic_category());
@@ -2354,11 +2358,12 @@ std::error_condition cdrom_file::parse_cue(std::string_view tocfname, toc &outto
 	enum gdi_area current_area = SINGLE_DENSITY;
 	bool is_multibin = false;
 	int leadin = -1;
-#ifdef _WIN32	// 변경 포인트 시작 한글 경로 오류 수정
-	FILE* infile = _wfopen(osd::text::to_wstring(path).c_str(), L"rt");
+
+#ifdef _WIN32
+	FILE *infile = _wfopen(osd::text::to_wstring(path).c_str(), L"rt");
 #else
-	FILE* infile = fopen(path.c_str(), "rt");
-#endif			// 변경 포인트 종료 한글 경로 오류 수정
+	FILE *infile = fopen(path.c_str(), "rt");
+#endif
 	if (!infile)
 	{
 		return std::error_condition(errno, std::generic_category());
@@ -2877,11 +2882,11 @@ bool cdrom_file::is_gdicue(std::string_view tocfname)
 	bool has_rem_highdensity = false;
 	std::string path = std::string(tocfname);
 
-#ifdef _WIN32	// 변경 포인트 시작 한글 경로 오류 수정
-	FILE* infile = _wfopen(osd::text::to_wstring(path).c_str(), L"rt");
+#ifdef _WIN32
+	FILE *infile = _wfopen(osd::text::to_wstring(path).c_str(), L"rt");
 #else
-	FILE* infile = fopen(path.c_str(), "rt");
-#endif			// 변경 포인트 종료 한글 경로 오류 수정
+	FILE *infile = fopen(path.c_str(), "rt");
+#endif
 	if (!infile)
 	{
 		return false;
@@ -2964,11 +2969,11 @@ std::error_condition cdrom_file::parse_toc(std::string_view tocfname, toc &outto
 
 	std::string path = std::string(tocfname);
 
-#ifdef _WIN32	// 변경 포인트 시작 한글 경로 오류 수정
-	FILE* infile = _wfopen(osd::text::to_wstring(path).c_str(), L"rt");
+#ifdef _WIN32
+	FILE *infile = _wfopen(osd::text::to_wstring(path).c_str(), L"rt");
 #else
-	FILE* infile = fopen(path.c_str(), "rt");
-#endif			// 변경 포인트 종료 한글 경로 오류 수정
+	FILE *infile = fopen(path.c_str(), "rt");
+#endif
 	if (!infile)
 	{
 		return std::error_condition(errno, std::generic_category());

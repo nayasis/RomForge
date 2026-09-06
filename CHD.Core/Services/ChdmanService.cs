@@ -11,7 +11,8 @@ public sealed class ChdmanService : IDisposable
 {
     private const string CHDMAN_DLL = "chdman.dll";
 
-    private readonly SemaphoreSlim _lock = new(1, 1);
+    // chdman.dll stores callbacks and cancellation state in native global variables.
+    private static readonly SemaphoreSlim NativeLock = new(1, 1);
 
     private readonly LogCallback _logCallback;
 
@@ -53,8 +54,12 @@ public sealed class ChdmanService : IDisposable
     {
         cuePath = Path.GetFullPath(cuePath);
         chdPath = Path.GetFullPath(chdPath);
+        string workingDirectory = Path.GetDirectoryName(cuePath)!;
+        string nativeOutput = string.Equals(workingDirectory, Path.GetDirectoryName(chdPath), StringComparison.OrdinalIgnoreCase)
+            ? Path.GetFileName(chdPath)
+            : chdPath;
 
-        return RunLockedAsync(Path.GetDirectoryName(cuePath)!, Path.GetFileName(cuePath), chdPath, "압축 중...", chdman_create_cd, progress, ct);
+        return RunLockedAsync(workingDirectory, Path.GetFileName(cuePath), nativeOutput, "압축 중...", chdman_create_cd, progress, ct);
     }
 
     public Task<bool> CreateDvdAsync(string isoPath, string chdPath, string compression = "zlib", IProgress<ProgressInfo>? progress = null, CancellationToken ct = default)
@@ -85,7 +90,7 @@ public sealed class ChdmanService : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        await _lock.WaitAsync(ct).ConfigureAwait(false);
+        await NativeLock.WaitAsync(ct).ConfigureAwait(false);
 
         try
         {
@@ -95,13 +100,13 @@ public sealed class ChdmanService : IDisposable
         }
         finally
         {
-            _lock.Release();
+            NativeLock.Release();
         }
     }
 
     private bool RunWithCwd(string workingDir, string input, string output, string label, Func<string, string, ProgressCallback, LogCallback, int> invoke, IProgress<ProgressInfo>? progress, CancellationTokenRegistration cancelReg, CancellationToken ct)
     {
-        string originalDir = Directory.GetCurrentDirectory();
+        string originalDirectory = Directory.GetCurrentDirectory();
         int lastProgress = 0;
         string ext = Path.GetExtension(input);
         long totallSize = 0;
@@ -184,7 +189,7 @@ public sealed class ChdmanService : IDisposable
         finally
         {
             handle.Free();
-            Directory.SetCurrentDirectory(originalDir);
+            Directory.SetCurrentDirectory(originalDirectory);
         }
     }
     public static ChdmanInfo GetChdInfo(string chdPath)
@@ -296,6 +301,5 @@ public sealed class ChdmanService : IDisposable
             return;
 
         _disposed = true;
-        _lock.Dispose();
     }
 }
