@@ -11,6 +11,7 @@ public static class DcpGdRomApplier
         var gdi = GdiFile.Parse(gdiPath);
 
         Dictionary<string, byte[]> replacedFiles;
+        byte[]? replacementIpBin = null;
 
         {
             using var sourceReader = new GdRomCompositeSectorReader(gdi);
@@ -29,15 +30,19 @@ public static class DcpGdRomApplier
             {
                 var relativePath = entry.FullName.Replace('/', '\\');
 
-                if (relativePath.StartsWith("bootsector\\", StringComparison.OrdinalIgnoreCase))
-                    continue;
-
                 onProgress?.Invoke(0.05 * entryDone / entries.Count, $"DCP 패키지 압축 해제 중: {entry.Name}");
 
                 using var entryStream = entry.Open();
                 using var ms = new MemoryStream();
 
                 await entryStream.CopyToAsync(ms, ct);
+
+                if (relativePath.Equals("bootsector\\IP.BIN", StringComparison.OrdinalIgnoreCase))
+                {
+                    replacementIpBin = ms.ToArray();
+                    entryDone++;
+                    continue;
+                }
 
                 replacedFiles[relativePath] = ms.ToArray();
 
@@ -63,7 +68,7 @@ public static class DcpGdRomApplier
                 onProgress?.Invoke(0.05 + 0.15 * xdeltaDone / xdeltaEntries.Count, $"xdelta 델타 패치 적용 중: {fileName}");
 
                 var originalData = Iso9660DirectoryReader.ReadFile(sourceFunc, originalEntry);
-                var patched = await Task.Run(() => Xdelta3.ApplyPatch(originalData, kv.Value, null, ct), ct);
+                var patched = await Task.Run(() => DcpXdelta3Codec.Decode(originalData, kv.Value), ct);
 
                 onLog?.Invoke($"xdelta 적용 완료: {targetPath} ({originalData.Length:N0} → {patched.Length:N0} bytes)");
 
@@ -74,7 +79,7 @@ public static class DcpGdRomApplier
             }
         }
 
-        await Task.Run(() => GdRomRebuilder.RebuildFull(gdi, replacedFiles, outputDir,
+        await Task.Run(() => GdRomRebuilder.RebuildFull(gdi, replacedFiles, replacementIpBin, outputDir,
             (p, msg) => onProgress?.Invoke(0.20 + 0.80 * p, msg), onLog, ct),
             ct);
 

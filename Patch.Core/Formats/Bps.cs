@@ -49,6 +49,10 @@ public static class Bps
             if (source.LongLength != sourceSize)
                 throw new InvalidDataException($"원본 파일 크기와 패치 파일 크기가 일치하지 않습니다. (패치가 기대하는 크기: {sourceSize:N0} bytes, 실제 파일 크기: {source.LongLength:N0} bytes)");
 
+            uint sourceCrc = *(uint*)(pPat + patch.Length - 12);
+            if (CalculateCrc32(source) != sourceCrc)
+                throw new InvalidDataException("원본 CRC32 불일치");
+
             if (metadataSize < 0 || pos + metadataSize > patch.Length - 12)
                 throw new InvalidDataException("BPS 메타데이터 크기가 유효하지 않습니다.");
 

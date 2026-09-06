@@ -35,6 +35,14 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <ExcludeFromSingleFile>false</ExcludeFromSingleFile>
     </None>
+    <None Update="udp_xdelta3.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <ExcludeFromSingleFile>false</ExcludeFromSingleFile>
+    </None>
+    <None Update="liblzma.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <ExcludeFromSingleFile>false</ExcludeFromSingleFile>
+    </None>
   </ItemGroup>
 
 </Project>

@@ -4,7 +4,7 @@ namespace Patch.Core.Formats.DCP.Services;
 
 public static class GdRomRebuilder
 {
-    public static void RebuildFull(GdiFile originalGdi, Dictionary<string, byte[]> replacedFiles, string outputDir, Action<double, string>? onProgress = null, Action<string>? onLog = null, CancellationToken ct = default)
+    public static void RebuildFull(GdiFile originalGdi, Dictionary<string, byte[]> replacedFiles, byte[]? replacementIpBin, string outputDir, Action<double, string>? onProgress = null, Action<string>? onLog = null, CancellationToken ct = default)
     {
         Directory.CreateDirectory(outputDir);
 
@@ -16,10 +16,32 @@ public static class GdRomRebuilder
             .Where(t => t.Type == TrackType.Data && t.StartLba >= 45000)
             .OrderBy(t => t.StartLba)
             .First();
+        var originalDataTrackPath = originalGdi.GetTrackFullPath(firstDataTrack);
+        long originalDataLength = new FileInfo(originalDataTrackPath).Length - firstDataTrack.FileOffset;
+
+        if (originalDataLength <= 0 || originalDataLength % firstDataTrack.SectorSize != 0)
+            throw new InvalidDataException($"원본 데이터 트랙 크기가 섹터 크기와 맞지 않습니다: {firstDataTrack.FileName}");
+
+        int originalSectorCount = checked((int)(originalDataLength / firstDataTrack.SectorSize));
         var ipBinSectors = new byte[16][];
 
-        for (uint s = 0; s < 16; s++)
-            ipBinSectors[s] = sourceFunc((uint)firstDataTrack.StartLba + s);
+        if (replacementIpBin is not null)
+        {
+            if (replacementIpBin.Length != 16 * 2048)
+                throw new InvalidDataException($"DCP bootsector/IP.BIN 크기가 올바르지 않습니다: {replacementIpBin.Length:N0} bytes");
+
+            for (int s = 0; s < 16; s++)
+            {
+                var sector = new byte[2048];
+                Buffer.BlockCopy(replacementIpBin, s * 2048, sector, 0, sector.Length);
+                ipBinSectors[s] = sector;
+            }
+        }
+        else
+        {
+            for (uint s = 0; s < 16; s++)
+                ipBinSectors[s] = sourceFunc((uint)firstDataTrack.StartLba + s);
+        }
 
         var originalPvdLba = sourceReader.PvdAbsoluteLba;
         var pvdRaw = sourceFunc(originalPvdLba);
@@ -62,7 +84,27 @@ public static class GdRomRebuilder
 
         onLog?.Invoke($"총 {replacedCount}개 파일 교체됨 (DCP 패키지 내 파일 {replacedFiles.Count}개 중)");
 
-        var (_, _, totalSectors) = builder.Relayout((uint)firstDataTrack.StartLba + 17);
+        builder.Relayout((uint)firstDataTrack.StartLba + 18);
+
+        string bootFileName = System.Text.Encoding.ASCII.GetString(ipBinSectors[0], 0x60, 16).Trim('\0', ' ');
+        var bootEntry = allFiles.SingleOrDefault(entry => entry.Name.Equals(bootFileName, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidDataException($"IP.BIN이 지정한 부트 파일을 찾을 수 없습니다: {bootFileName}");
+        int bootSectorCount = (int)Math.Ceiling(fileDataCache[bootEntry].Length / 2048.0);
+        long bootLbaValue = firstDataTrack.StartLba + originalSectorCount - 150L - bootSectorCount;
+
+        if (bootLbaValue < firstDataTrack.StartLba)
+            throw new InvalidDataException($"데이터 트랙에 부트 파일을 배치할 공간이 없습니다: {bootFileName}");
+
+        uint bootLba = checked((uint)bootLbaValue);
+        uint contentEndLba = allFiles
+            .Where(entry => entry != bootEntry)
+            .Max(entry => entry.LayoutLba + (uint)Math.Ceiling(fileDataCache[entry].Length / 2048.0));
+
+        if (contentEndLba > bootLba)
+            throw new InvalidDataException($"패치 결과가 데이터 트랙 용량을 초과했습니다: {bootFileName} 배치 불가");
+
+        bootEntry.LayoutLba = bootLba;
+
         var contentSectors = new List<(uint Lba, byte[] Data)>();
 
         foreach (var (lba, data) in builder.GetPathTableSectors())
@@ -91,9 +133,10 @@ public static class GdRomRebuilder
 
         CollectDirRecords(root);
 
-        var newPvd = builder.BuildPvd(totalSectors);
+        var newPvd = builder.BuildPvd((uint)originalSectorCount);
 
         contentSectors.Add(((uint)firstDataTrack.StartLba + 16, PadToSector(newPvd)));
+        contentSectors.Add(((uint)firstDataTrack.StartLba + 17, BuildVolumeDescriptorTerminator()));
 
         var expanded = new List<(uint Lba, byte[] Sector2048)>();
 
@@ -119,7 +162,7 @@ public static class GdRomRebuilder
         var dedup = expanded.GroupBy(e => e.Lba).Select(g => g.Last()).OrderBy(e => e.Lba).ToList();
         var newDataTrackPath = Path.Combine(outputDir, firstDataTrack.FileName);
 
-        GdRomWriter.WriteDataTrack(newDataTrackPath, (uint)firstDataTrack.StartLba, dedup, (p, msg) =>
+        GdRomWriter.WriteDataTrack(newDataTrackPath, (uint)firstDataTrack.StartLba, dedup, originalSectorCount, (p, msg) =>
         {
             onProgress?.Invoke(0.02 + (p * 0.23), $"{firstDataTrack.FileName} 생성 중: {msg}");
         }, ct);
@@ -206,6 +249,17 @@ public static class GdRomRebuilder
         Buffer.BlockCopy(data, 0, padded, 0, data.Length);
 
         return padded;
+    }
+
+    private static byte[] BuildVolumeDescriptorTerminator()
+    {
+        var sector = new byte[2048];
+
+        sector[0] = 0xFF;
+        System.Text.Encoding.ASCII.GetBytes("CD001").CopyTo(sector, 1);
+        sector[6] = 0x01;
+
+        return sector;
     }
 
     private static void WriteGdi(GdiFile original, string outputPath)

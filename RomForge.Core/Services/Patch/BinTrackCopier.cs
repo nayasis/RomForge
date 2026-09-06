@@ -29,9 +29,9 @@ public class BinTrackCopier(Action<string, LogLevel> log)
 
         if (cuePath is null || referencedBins is null)
         {
-            log("CUE 파일을 찾을 수 없습니다. CD 이미지가 아니거나 CUE가 누락되었을 수 있습니다.", LogLevel.Error);
-
-            return null;
+            const string message = "CUE 파일을 찾을 수 없습니다. CD 이미지가 아니거나 CUE가 누락되었을 수 있습니다.";
+            log(message, LogLevel.Error);
+            throw new InvalidOperationException(message);
         }
 
         var sourceDir = Path.GetDirectoryName(cuePath)!;

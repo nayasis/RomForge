@@ -127,6 +127,7 @@ public static class Ppf
 
         src.Position = 0;
         outStream.Position = 0;
+        pat.Position = pos;
 
         byte[] ioBuffer = new byte[64 * 1024];
         long totalCopied = 0;
@@ -161,6 +162,11 @@ public static class Ppf
         while (pat.Position < dataEnd)
         {
             ct.ThrowIfCancellationRequested();
+
+            int recordHeaderLength = version == 3 ? 9 : 5;
+
+            if (dataEnd - pat.Position < recordHeaderLength)
+                break;
 
             long offset = version == 3 ? BitConverter.ToInt64(ReadBytes(pat, 8), 0) : BitConverter.ToUInt32(ReadBytes(pat, 4), 0);
             int length = pat.ReadByte();
@@ -200,7 +206,16 @@ public static class Ppf
     private static byte[] ReadBytes(Stream stream, int count)
     {
         byte[] buffer = new byte[count];
-        stream.ReadExactly(buffer, 0, count);
+        long startPosition = stream.Position;
+
+        try
+        {
+            stream.ReadExactly(buffer, 0, count);
+        }
+        catch (EndOfStreamException ex)
+        {
+            throw new EndOfStreamException($"PPF 데이터가 예기치 않게 끝났습니다. 위치: {startPosition}, 요청: {count}, 길이: {stream.Length}", ex);
+        }
 
         return buffer;
     }

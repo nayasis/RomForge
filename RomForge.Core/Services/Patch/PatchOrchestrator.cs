@@ -21,14 +21,9 @@ public class PatchOrchestrator(Action<string, LogLevel> log, IProgress<ProgressI
 
     public async Task PatchAsync(string sourcePath, string patchPath, DetectResult detected, string outputDir, string outputPath, bool sourceIsTemporary, CancellationToken ct)
     {
-        _outputCuePath = null;
-        _outputCcdPath = null;
-        _outputGdiPath = null;
-        _copiedTrackPaths = [];
+        ResetState();
 
-        bool isZipTarget = detected.Format is not (RomFormat.Bin or RomFormat.Iso or RomFormat.Gcm or RomFormat.Wii or RomFormat.Wbfs or RomFormat.Ccd or RomFormat.Cci or RomFormat.Cia or RomFormat.Gdi);
         bool isDcpPatch = Path.GetExtension(patchPath).Equals(".dcp", StringComparison.OrdinalIgnoreCase);
-        bool skipCompress;
 
         if (isDcpPatch)
         {
@@ -109,13 +104,33 @@ public class PatchOrchestrator(Action<string, LogLevel> log, IProgress<ProgressI
                         if (File.Exists(trackPath))
                             _copiedTrackPaths.Add(trackPath);
                     }
+
+                    LogDcpChdInputLayout(rebuiltGdi);
                 }
 
                 progress.Report(new ProgressInfo { Label = "패치 완료", Percent = 100 });
                 log($"패치 완료: {_outputGdiPath}", LogLevel.Ok);
 
                 if (autoCompress && File.Exists(_outputGdiPath))
-                    await _compressKnownConverter.ConvertAsync(detected, outputPath, null, _copiedTrackPaths, null, _outputGdiPath, outputDir, ct);
+                {
+                    string dcpWorkingDirectory = Path.GetDirectoryName(_outputGdiPath)!;
+
+                    await DcpChdStagingConverter.ConvertAsync(_outputGdiPath, outputDir, AppConfig.Instance.Chdman.Compression, progress, log, ct);
+
+                    if (File.Exists(outputPath))
+                        File.Delete(outputPath);
+
+                    File.Delete(_outputGdiPath);
+
+                    foreach (var trackPath in _copiedTrackPaths)
+                        if (File.Exists(trackPath))
+                            File.Delete(trackPath);
+
+                    _copiedTrackPaths.Clear();
+
+                    if (Directory.Exists(dcpWorkingDirectory) && !Directory.EnumerateFileSystemEntries(dcpWorkingDirectory).Any())
+                        Directory.Delete(dcpWorkingDirectory);
+                }
             }
 
             return;
@@ -123,10 +138,23 @@ public class PatchOrchestrator(Action<string, LogLevel> log, IProgress<ProgressI
 
         await UniversalPatcher.ApplyPatchAsync(sourcePath, patchPath, outputPath, progress, ct);
 
+        await FinalizePatchedFileAsync(sourcePath, detected, outputDir, outputPath, sourceIsTemporary, ct);
+    }
+
+    public async Task CompletePatchedFileAsync(string sourcePath, DetectResult detected, string outputDir, string outputPath, bool sourceIsTemporary, CancellationToken ct)
+    {
+        ResetState();
+        await FinalizePatchedFileAsync(sourcePath, detected, outputDir, outputPath, sourceIsTemporary, ct);
+    }
+
+    private async Task FinalizePatchedFileAsync(string sourcePath, DetectResult detected, string outputDir, string outputPath, bool sourceIsTemporary, CancellationToken ct)
+    {
+        bool isZipTarget = detected.Format is not (RomFormat.Bin or RomFormat.Iso or RomFormat.Gcm or RomFormat.Wii or RomFormat.Wbfs or RomFormat.Ccd or RomFormat.Cci or RomFormat.Cia or RomFormat.Gdi);
+
         progress.Report(new ProgressInfo { Label = "패치 완료", Percent = 100 });
         log($"패치 완료: {outputPath}", LogLevel.Ok);
 
-        skipCompress = false;
+        bool skipCompress = false;
 
         if (detected.Format == RomFormat.Bin)
         {
@@ -154,6 +182,29 @@ public class PatchOrchestrator(Action<string, LogLevel> log, IProgress<ProgressI
         }
         else
             await _compressKnownConverter.ConvertAsync(detected, outputPath, _outputCuePath, _copiedTrackPaths, _outputCcdPath, _outputGdiPath, outputDir, ct);
+    }
+
+    private void ResetState()
+    {
+        _outputCuePath = null;
+        _outputCcdPath = null;
+        _outputGdiPath = null;
+        _copiedTrackPaths = [];
+    }
+
+    private void LogDcpChdInputLayout(GdiFile gdi)
+    {
+        log($"DCP CHD 입력 GDI: {_outputGdiPath}", LogLevel.Highlight);
+
+        foreach (var track in gdi.Tracks)
+        {
+            var trackPath = gdi.GetTrackFullPath(track);
+
+            if (File.Exists(trackPath))
+                log($"DCP CHD 입력 트랙: {track.FileName} -> {trackPath} ({new FileInfo(trackPath).Length:N0} bytes)", LogLevel.Info);
+            else
+                log($"DCP CHD 입력 트랙 누락: {track.FileName} -> {trackPath}", LogLevel.Error);
+        }
     }
 
     public void Cleanup(string outputPath)

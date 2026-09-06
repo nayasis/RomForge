@@ -40,6 +40,7 @@ public class ZipCompressor(Action<string, LogLevel> log, IProgress<ProgressInfo>
             }
         }, ct);
 
+        File.Delete(outputPath);
         log($"압축 완료: {zipPath}", LogLevel.Ok);
     }
 }

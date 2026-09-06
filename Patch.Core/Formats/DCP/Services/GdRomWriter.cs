@@ -2,7 +2,7 @@
 
 public static class GdRomWriter
 {
-    public static void WriteDataTrack(string outputPath, uint trackStartLba, IReadOnlyCollection<(uint Lba, byte[] Sector2048)> sectors, Action<double, string>? onProgress = null, CancellationToken ct = default)
+    public static void WriteDataTrack(string outputPath, uint trackStartLba, IReadOnlyCollection<(uint Lba, byte[] Sector2048)> sectors, int minimumSectorCount, Action<double, string>? onProgress = null, CancellationToken ct = default)
     {
         if (sectors.Count == 0)
             return;
@@ -11,7 +11,7 @@ public static class GdRomWriter
 
         var sortedSectors = sectors.OrderBy(s => s.Lba).ToList();
         uint maxLba = sortedSectors[^1].Lba;
-        int totalRequiredSectors = (int)(maxLba - trackStartLba + 1);
+        int totalRequiredSectors = Math.Max(minimumSectorCount, checked((int)(maxLba - trackStartLba + 1)));
         string tempPath = outputPath + ".tmp";
 
         try
@@ -112,12 +112,16 @@ public static class GdRomWriter
         sector[2066] = (byte)((edc >> 16) & 0xFF);
         sector[2067] = (byte)((edc >> 24) & 0xFF);
 
+        PopulateEcc(sector);
+
         return sector;
     }
 
     private static byte ToBcd(byte value) => (byte)(((value / 10) << 4) | (value % 10));
 
     private static readonly uint[] EdcTable = BuildEdcTable();
+    private static readonly byte[] EccForwardTable = BuildEccForwardTable();
+    private static readonly byte[] EccBackwardTable = BuildEccBackwardTable(EccForwardTable);
 
     private static uint[] BuildEdcTable()
     {
@@ -144,5 +148,68 @@ public static class GdRomWriter
             edc = EdcTable[(edc ^ data[offset + i]) & 0xFF] ^ (edc >> 8);
 
         return edc;
+    }
+
+    private static byte[] BuildEccForwardTable()
+    {
+        var table = new byte[256];
+
+        for (int i = 0; i < table.Length; i++)
+        {
+            int value = i << 1;
+
+            if ((value & 0x100) != 0)
+                value ^= 0x11D;
+
+            table[i] = (byte)value;
+        }
+
+        return table;
+    }
+
+    private static byte[] BuildEccBackwardTable(byte[] forwardTable)
+    {
+        var table = new byte[256];
+
+        for (int i = 0; i < table.Length; i++)
+            table[i ^ forwardTable[i]] = (byte)i;
+
+        return table;
+    }
+
+    private static void PopulateEcc(byte[] sector)
+    {
+        ComputeEcc(sector, 12, 86, 24, 2, 86, sector, 2076);
+        ComputeEcc(sector, 12, 52, 43, 86, 88, sector, 2248);
+    }
+
+    private static void ComputeEcc(byte[] source, int sourceOffset, int majorCount, int minorCount, int majorMultiplier, int minorIncrement, byte[] destination, int destinationOffset)
+    {
+        int size = majorCount * minorCount;
+
+        for (int major = 0; major < majorCount; major++)
+        {
+            int index = (major >> 1) * majorMultiplier + (major & 1);
+            byte firstParity = 0;
+            byte secondParity = 0;
+
+            for (int minor = 0; minor < minorCount; minor++)
+            {
+                byte value = source[sourceOffset + index];
+
+                index += minorIncrement;
+
+                if (index >= size)
+                    index -= size;
+
+                firstParity ^= value;
+                secondParity ^= value;
+                firstParity = EccForwardTable[firstParity];
+            }
+
+            firstParity = EccBackwardTable[EccForwardTable[firstParity] ^ secondParity];
+            destination[destinationOffset + major] = firstParity;
+            destination[destinationOffset + major + majorCount] = (byte)(firstParity ^ secondParity);
+        }
     }
 }
