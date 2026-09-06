@@ -12,6 +12,8 @@ public class UtilMainViewModel : MultiToolTabViewModel
 
     public CueMainViewModel CueVM { get; } = new();
 
+    public M3uMainViewModel M3uVM { get; } = new();
+
     public HashMainViewModel HashVM { get; } = new();
 
     public TistoryMainViewModel TistoryVM { get; } = new();
@@ -40,7 +42,8 @@ public class UtilMainViewModel : MultiToolTabViewModel
         Tools.Add(TistoryVM);
         Tools.Add(ZipImageToolVM);
         Tools.Add(CertsVM);
-        Tools.Add(CueVM);        
+        Tools.Add(CueVM);
+        Tools.Add(M3uVM);
 
         foreach (var tool in Tools)
             tool.PropertyChanged += Child_PropertyChanged;

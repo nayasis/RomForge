@@ -94,6 +94,8 @@ public class CompressMainViewModel : ToolTabViewModel
         OnPropertyChanged(nameof(HintVisibility));
     }
 
+    public void ToggleOutputExtension(CompressFileItem item) => item.ToggleOutputExtension();
+
     private async Task RunAsync()
     {
         _cts.Dispose();
@@ -220,12 +222,39 @@ public class CompressMainViewModel : ToolTabViewModel
                         case RomFormat.Wbfs:
                         case RomFormat.Wia:
                             {
+                                if (detected.Format == RomFormat.Rvz && item.OutputExtension.Equals("wbfs", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    string tempDirectory = Path.Combine(Path.GetTempPath(), "RomForge", Guid.NewGuid().ToString("N"));
+                                    Directory.CreateDirectory(tempDirectory);
+
+                                    try
+                                    {
+                                        await new DolphinService().ConvertFileAsync(item.FilePath, "rvz", "iso", AppConfig.Instance.Dolphin.CompressLevel, tempDirectory, _cts.Token);
+                                        string temporaryIsoPath = Path.Combine(tempDirectory, Path.GetFileNameWithoutExtension(item.FilePath) + ".iso");
+                                        string outputPath = Common.Utils.GetUniqueFilePath(Path.ChangeExtension(item.FilePath, ".wbfs"));
+                                        await WitService.ConvertAsync(temporaryIsoPath, outputPath, "wbfs", progressHandler, _cts.Token);
+                                    }
+                                    finally
+                                    {
+                                        if (Directory.Exists(tempDirectory))
+                                            Directory.Delete(tempDirectory, true);
+                                    }
+                                }
+                                else if ((detected.Format == RomFormat.Wbfs && item.OutputExtension is "iso" or "gcz")
+                                    || (detected.Format == RomFormat.Wii && item.OutputExtension is "wbfs" or "gcz"))
+                                {
+                                    string outputPath = Common.Utils.GetUniqueFilePath(Path.ChangeExtension(item.FilePath, "." + item.OutputExtension));
+                                    await WitService.ConvertAsync(item.FilePath, outputPath, item.OutputExtension, progressHandler, _cts.Token);
+                                }
+                                else
+                                {
                                 DolphinService dolphin = new();
 
                                 dolphin.LogMessage += (_, e) => AppendLog(e.Message, e.Level);
                                 dolphin.ProgressChanged += (s, e) => Application.Current.Dispatcher.Invoke(() => item.Progress = e.Progress);
 
-                                await dolphin.ConvertFileAsync(item.FilePath, detected.Format.ToString(), detected.OutputExtension, AppConfig.Instance.Dolphin.CompressLevel, null, _cts.Token);
+                                await dolphin.ConvertFileAsync(item.FilePath, detected.Format.ToString(), item.OutputExtension, AppConfig.Instance.Dolphin.CompressLevel, null, _cts.Token);
+                                }
                             }
                             break;
                         case RomFormat.Unknown:

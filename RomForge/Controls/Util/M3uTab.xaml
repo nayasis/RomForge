@@ -1,0 +1,76 @@
+<UserControl x:Class="RomForge.Controls.Util.M3uTab"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <ListView x:Name="fileList" Grid.Row="0" Margin="5,0,5,5" ItemsSource="{Binding FileItems}" SelectionMode="Extended" IsEnabled="{Binding IsUnlocked}" AllowDrop="True"
+                  Drop="FileList_Drop" DragOver="FileList_DragOver" KeyUp="FileList_KeyUp">
+            <ListView.View>
+                <GridView>
+                    <GridViewColumn Width="320" DisplayMemberBinding="{Binding GroupName}">
+                        <GridViewColumn.Header>
+                            <StackPanel Orientation="Horizontal">
+                                <Image Source="/Common.WPF;component/Assets/Images/AddFolder.png" Width="20" Height="20" Margin="0,0,6,0"/>
+                                <TextBlock Text="그룹" Foreground="#BBBBBB" FontSize="13" FontWeight="Bold"/>
+                            </StackPanel>
+                        </GridViewColumn.Header>
+                    </GridViewColumn>
+                    <GridViewColumn Width="520" DisplayMemberBinding="{Binding FileName}">
+                        <GridViewColumn.Header>
+                            <StackPanel Orientation="Horizontal">
+                                <Image Source="/Common.WPF;component/Assets/Images/AddFile.png" Width="20" Height="20" Margin="0,0,6,0"/>
+                                <TextBlock Text="파일명" Foreground="#BBBBBB" FontSize="13" FontWeight="Bold"/>
+                            </StackPanel>
+                        </GridViewColumn.Header>
+                    </GridViewColumn>
+                </GridView>
+            </ListView.View>
+        </ListView>
+
+        <Border Grid.Row="0" IsHitTestVisible="False" Visibility="{Binding HintVisibility}" BorderBrush="#333337" BorderThickness="1" Margin="15,50,15,15" CornerRadius="6">
+            <Border.Background>
+                <SolidColorBrush Color="#181818" Opacity="0.95"/>
+            </Border.Background>
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.85">
+                <Image Source="/Assets/Images/drag.png" Width="28" Height="28" Margin="0,0,0,8"/>
+                <TextBlock Text="M3U로 만들 파일 또는 폴더를 여기에 드래그&amp;드롭하세요" Foreground="LightGray" FontSize="14" FontWeight="Bold" HorizontalAlignment="Center"/>
+                <TextBlock Text="폴더는 바로 아래 파일만 등록합니다." Foreground="#D4AF37" FontSize="13" FontWeight="Bold" Margin="0,8,0,0" HorizontalAlignment="Center"/>
+            </StackPanel>
+        </Border>
+
+        <Border Grid.Row="1" Margin="5,0,5,5" Background="#252526" Padding="8,6" BorderBrush="#2D2D30" BorderThickness="0,1,0,0" CornerRadius="5">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <Button Style="{StaticResource GrayButton}" IsEnabled="{Binding IsUnlocked}" Click="AddFiles_Click" Margin="0,0,6,0">
+                        <StackPanel Orientation="Horizontal"><Image Source="/Common.WPF;component/Assets/Images/AddFile.png" Width="24" Height="24" Margin="0,0,6,0"/><TextBlock Text="파일 추가"/></StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource GrayButton}" IsEnabled="{Binding IsUnlocked}" Click="AddFolder_Click" Margin="0,0,6,0">
+                        <StackPanel Orientation="Horizontal"><Image Source="/Common.WPF;component/Assets/Images/AddFolder.png" Width="24" Height="24" Margin="0,0,6,0"/><TextBlock Text="폴더 추가"/></StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource GrayButton}" IsEnabled="{Binding IsUnlocked}" Click="Remove_Click" Margin="0,0,6,0">
+                        <StackPanel Orientation="Horizontal"><Image Source="/Assets/Images/Delete.png" Width="24" Height="24" Margin="0,0,6,0"/><TextBlock Text="선택 삭제"/></StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource GrayButton}" IsEnabled="{Binding IsUnlocked}" Click="Clear_Click">
+                        <StackPanel Orientation="Horizontal"><Image Source="/Assets/Images/Clear.png" Width="24" Height="24" Margin="0,0,6,0"/><TextBlock Text="전체 삭제"/></StackPanel>
+                    </Button>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Button Style="{StaticResource RunButton}" IsEnabled="{Binding IsUnlocked}" Command="{Binding RunCommand}" Margin="0,0,6,0">
+                        <StackPanel Orientation="Horizontal"><Image Source="/Assets/Images/Run.png" Width="24" Height="24" Margin="0,0,6,0"/><TextBlock Text="시작" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/></StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource GrayButton}" IsEnabled="{Binding IsLocked}" Command="{Binding CancelCommand}">
+                        <StackPanel Orientation="Horizontal"><Image Source="/Assets/Images/Cancel.png" Width="24" Height="24" Margin="0,0,6,0"/><TextBlock Text="취소"/></StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

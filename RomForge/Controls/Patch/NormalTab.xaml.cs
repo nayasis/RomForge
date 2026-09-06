@@ -193,16 +193,51 @@ public partial class NormalTab : UserControl
 
     private void NormalSourceDrop_Click(object sender, MouseButtonEventArgs e)
     {
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+            SelectSourceDirectory();
+        else
+            SelectSourceFile();
+    }
+
+    private void NormalSourceDrop_RightClick(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        SelectSourceDirectory();
+    }
+
+    private void SelectSourceFile()
+    {
         var dlg = new OpenFileDialog { Title = "원본 파일 선택" };
 
         if (dlg.ShowDialog() == true)
             ViewModel.PatchVM.NormalVM.SourcePath = dlg.FileName;
     }
 
+    private void NormalSourceDirectory_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+
+        SelectSourceDirectory();
+    }
+
+    private void SelectSourceDirectory()
+    {
+        var dlg = new OpenFolderDialog { Title = "원본 디렉토리 선택" };
+
+        if (dlg.ShowDialog() == true)
+            ViewModel.PatchVM.NormalVM.SourcePath = dlg.FolderName;
+    }
+
     private void NormalSourceDrop_Drop(object sender, DragEventArgs e)
     {
         if (e.Data.GetData(DataFormats.FileDrop) is string[] files && files.Length > 0)
         {
+            if (Directory.Exists(files[0]))
+            {
+                ViewModel.PatchVM.NormalVM.SourcePath = files[0];
+                return;
+            }
+
             var patchFiles = files
                 .Where(f => PatchExtensions.AllowedExtensions.Contains(Path.GetExtension(f).ToLower()))
                 .ToList();
@@ -219,20 +254,50 @@ public partial class NormalTab : UserControl
 
     private void NormalPatchDrop_Click(object sender, MouseButtonEventArgs e)
     {
-        var dlg = new OpenFileDialog
-        {
-            Title = "패치 파일 선택",
-            Filter = PatchExtensions.FileFilter
-        };
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+            SelectPatchDirectory();
+        else
+            SelectPatchFile();
+    }
+
+    private void NormalPatchDrop_RightClick(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+        SelectPatchDirectory();
+    }
+
+    private void NormalPatchDirectory_Click(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        SelectPatchDirectory();
+    }
+
+    private void SelectPatchFile()
+    {
+        var dlg = new OpenFileDialog { Title = "패치 파일 선택", Filter = PatchExtensions.FileFilter };
 
         if (dlg.ShowDialog() == true)
             ViewModel.PatchVM.NormalVM.PatchPath = dlg.FileName;
+    }
+
+    private void SelectPatchDirectory()
+    {
+        var dlg = new OpenFolderDialog { Title = "패치 디렉토리 선택" };
+
+        if (dlg.ShowDialog() == true)
+            ViewModel.PatchVM.NormalVM.PatchPath = dlg.FolderName;
     }
 
     private void NormalPatchDrop_Drop(object sender, DragEventArgs e)
     {
         if (e.Data.GetData(DataFormats.FileDrop) is string[] files && files.Length > 0)
         {
+            if (Directory.Exists(files[0]))
+            {
+                ViewModel.PatchVM.NormalVM.PatchPath = files[0];
+                return;
+            }
+
             var patchFiles = files
                 .Where(f => PatchExtensions.AllowedExtensions.Contains(Path.GetExtension(f).ToLower()))
                 .ToList();

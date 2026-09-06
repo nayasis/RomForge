@@ -138,6 +138,7 @@ public class ArcadePatchMainViewModel : ToolTabViewModel, IPatchViewModel
 
         string outputDir = Path.Combine(Path.GetDirectoryName(SourcePath)!, "output");
         string outputZipPath = Path.Combine(outputDir, Path.GetFileName(SourcePath));
+        string completionDir = outputDir;
 
         Log($"패치 시작: {Path.GetFileName(SourcePath)}", LogLevel.Highlight);
 
@@ -166,10 +167,17 @@ public class ArcadePatchMainViewModel : ToolTabViewModel, IPatchViewModel
         {
             await PatchService.ApplyPatchedZipAsync(SourcePath, outputZipPath, patchesByEntryName, progressReporter, ct);
 
+            if (AppConfig.Instance.Patch.CreateElPackageWhenCompleted)
+            {
+                var elPackageCreator = new ElPackageCreator(Log);
+                completionDir = elPackageCreator.Create(SourcePath, [SourcePath], outputDir, [outputZipPath]);
+                elPackageCreator.CleanupOutputDirectory(outputDir);
+            }
+
             Log($"패치 완료: {SourcePath}", LogLevel.Ok);
 
             if (AppConfig.Instance.Patch.OpenOutputFolderWhenCompleted)
-                outputDir.OpenFolder();
+                completionDir.OpenFolder();
             else
                 PatchCompleted?.Invoke(this, EventArgs.Empty);
         }
@@ -194,12 +202,14 @@ public class ArcadePatchMainViewModel : ToolTabViewModel, IPatchViewModel
     {
         try
         {
-            if (File.Exists(outputZipPath))
-                File.Delete(outputZipPath);
+            string? outputDir = Path.GetDirectoryName(outputZipPath);
+
+            if (outputDir is not null && Directory.Exists(outputDir))
+                Directory.Delete(outputDir, true);
         }
         catch (Exception ex)
         {
-            Log($"중단된 결과 파일 삭제 실패: {ex.Message} (수동으로 확인해주세요: {outputZipPath})", LogLevel.Error);
+            Log($"오류 발생 후 output 폴더 정리 실패: {ex.Message} (수동으로 확인해주세요: {Path.GetDirectoryName(outputZipPath)})", LogLevel.Error);
         }
     }
 

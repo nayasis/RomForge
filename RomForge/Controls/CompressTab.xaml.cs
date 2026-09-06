@@ -64,6 +64,14 @@ public partial class CompressTab : UserControl
         ViewModel.CompressVM.RemoveItems(selected);
     }
 
+    private void ExtensionLabel_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+
+        if (sender is FrameworkElement { DataContext: CompressFileItem item })
+            ViewModel.CompressVM.ToggleOutputExtension(item);
+    }
+
     private void BtnAddFiles_Click(object sender, RoutedEventArgs e)
     {
         var dlg = new OpenFileDialog

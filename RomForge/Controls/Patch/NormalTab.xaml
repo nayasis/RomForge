@@ -11,6 +11,7 @@
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <Grid Grid.Row="0">
@@ -19,30 +20,36 @@
                 <ColumnDefinition Width="2"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
-            <Border IsEnabled="{Binding IsIdle}" Grid.Column="0" Style="{StaticResource DropZone}" AllowDrop="True" Drop="NormalSourceDrop_Drop" MouseLeftButtonDown="NormalSourceDrop_Click">
+            <Border IsEnabled="{Binding IsIdle}" Grid.Column="0" Style="{StaticResource DropZone}" AllowDrop="True" Drop="NormalSourceDrop_Drop" MouseLeftButtonDown="NormalSourceDrop_Click" MouseRightButtonDown="NormalSourceDrop_RightClick">
                 <Grid Margin="14,0">
                     <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
-                        <Image Grid.Column="0" Source="/Common.WPF;component/Assets/Images/AddFile.png" Width="28" Height="28" Margin="0,0,6,0" VerticalAlignment="Center" ToolTip="{Binding PatchVM.NormalVM.SourcePath}"/>
+                        <Image Grid.Column="0" Source="{Binding PatchVM.NormalVM.SourceIconPath}" Width="28" Height="28" Margin="0,0,6,0" VerticalAlignment="Center" ToolTip="{Binding PatchVM.NormalVM.SourcePath}"/>
                         <TextBlock Grid.Column="1" Text="{Binding PatchVM.NormalVM.SourceLabel}" Foreground="#888888" FontSize="12" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" ToolTip="{Binding PatchVM.NormalVM.SourcePath}"/>
                     </Grid>
                     <TextBlock Text="원본" Foreground="#888" FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,8" ToolTip="{Binding PatchVM.NormalVM.SourcePath}"/>
+                    <Button HorizontalAlignment="Right" VerticalAlignment="Bottom" Width="26" Height="26" Padding="4" ToolTip="원본 디렉토리 선택" Click="NormalSourceDirectory_Click" Style="{StaticResource GrayButton}">
+                        <Image Source="/Assets/Images/WorkSpace.png" Width="15" Height="15"/>
+                    </Button>
                 </Grid>
             </Border>
-            <Border IsEnabled="{Binding IsIdle}" Grid.Column="2" Style="{StaticResource DropZone}" AllowDrop="True" Drop="NormalPatchDrop_Drop" MouseLeftButtonDown="NormalPatchDrop_Click">
+            <Border IsEnabled="{Binding IsIdle}" Grid.Column="2" Style="{StaticResource DropZone}" AllowDrop="True" Drop="NormalPatchDrop_Drop" MouseLeftButtonDown="NormalPatchDrop_Click" MouseRightButtonDown="NormalPatchDrop_RightClick">
                 <Grid Margin="14,0">
                     <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
-                        <Image Grid.Column="0" Source="/Assets/Images/Patch.png" Width="28" Height="28" Margin="0,0,6,0" VerticalAlignment="Center" ToolTip="{Binding PatchVM.NormalVM.PatchPath}"/>
+                        <Image Grid.Column="0" Source="{Binding PatchVM.NormalVM.PatchIconPath}" Width="28" Height="28" Margin="0,0,6,0" VerticalAlignment="Center" ToolTip="{Binding PatchVM.NormalVM.PatchPath}"/>
                         <TextBlock Grid.Column="1" Text="{Binding PatchVM.NormalVM.PatchLabel}" Foreground="#888888" FontSize="12" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" ToolTip="{Binding PatchVM.NormalVM.PatchPath}"/>
                     </Grid>
                     <TextBlock Text="패치" Foreground="#888" FontSize="11" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,8" ToolTip="{Binding PatchVM.NormalVM.PatchPath}"/>
+                    <Button HorizontalAlignment="Right" VerticalAlignment="Bottom" Width="26" Height="26" Padding="4" ToolTip="패치 디렉토리 선택" Click="NormalPatchDirectory_Click" Style="{StaticResource GrayButton}">
+                        <Image Source="/Assets/Images/WorkSpace.png" Width="15" Height="15"/>
+                    </Button>
                 </Grid>
             </Border>
         </Grid>
@@ -241,7 +248,15 @@
             </StackPanel>
         </ToggleButton>
 
-        <Border Grid.Row="7" Background="#12FFFFFF" BorderBrush="#30FFFFFF" BorderThickness="0,1,0,0" CornerRadius="8" Margin="0,5,0,5" Padding="8,0">
+        <ToggleButton Grid.Row="7" Style="{StaticResource ToggleStyle}" IsChecked="{Binding PatchVM.NormalVM.CreateElPackageWhenCompleted}" Margin="0,2,0,2">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <Image Width="18" Margin="0,0,10,0" Source="{Binding PatchVM.NormalVM.CreateElPackageWhenCompleted, Converter={StaticResource BoolToImageConverter}}" VerticalAlignment="Center"/>
+                <TextBlock Text="패치 완료 후 EL 패키지 생성" VerticalAlignment="Center" Foreground="#FFFFFF" FontWeight="Bold" Margin="0,0,12,0"/>
+                <TextBlock Text="원본을 _EL_CONFIG/src에 보관하고 결과물을 정리합니다." VerticalAlignment="Center" Foreground="#A0A0A0" FontSize="11"/>
+            </StackPanel>
+        </ToggleButton>
+
+        <Border Grid.Row="8" Background="#12FFFFFF" BorderBrush="#30FFFFFF" BorderThickness="0,1,0,0" CornerRadius="8" Margin="0,5,0,5" Padding="8,0">
             <Grid x:Name="progressArea" Height="28">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>

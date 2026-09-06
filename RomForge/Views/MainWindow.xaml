@@ -139,7 +139,7 @@
         </GridSplitter>
 
         <Border BorderBrush="#444444" BorderThickness="1" CornerRadius="10" Background="Transparent" Grid.Row="2">
-            <ListBox x:Name="logBox" Style="{StaticResource LogBox}" ItemsSource="{Binding ActiveLogEntries}" helpers:LogAutoScrollBehavior.Enabled="True" BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+            <RichTextBox x:Name="logBox" Style="{StaticResource LogBox}" helpers:LogRichTextBehavior.Entries="{Binding ActiveLogEntries}"/>
         </Border>
     </Grid>
 </Window>

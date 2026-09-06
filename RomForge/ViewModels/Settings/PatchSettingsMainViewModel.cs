@@ -14,6 +14,9 @@ public class PatchSettingsMainViewModel : ToolTabViewModel
 
             if (e.PropertyName == nameof(PatchConfig.OpenOutputFolderWhenCompleted))
                 OnPropertyChanged(nameof(OpenOutputFolderWhenCompleted));
+
+            if (e.PropertyName == nameof(PatchConfig.CreateElPackageWhenCompleted))
+                OnPropertyChanged(nameof(CreateElPackageWhenCompleted));
         };
     }
 
@@ -33,6 +36,16 @@ public class PatchSettingsMainViewModel : ToolTabViewModel
         set
         {
             AppConfig.Instance.Patch.OpenOutputFolderWhenCompleted = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public bool CreateElPackageWhenCompleted
+    {
+        get => AppConfig.Instance.Patch.CreateElPackageWhenCompleted;
+        set
+        {
+            AppConfig.Instance.Patch.CreateElPackageWhenCompleted = value;
             OnPropertyChanged();
         }
     }
