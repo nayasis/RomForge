@@ -7,17 +7,55 @@ namespace RomForge.Core.Models.Compression;
 
 public class CompressFileItem(string filePath) : FileItemBase(filePath)
 {
+    private string? _outputExtension;
+
+    public string OutputExtension => _outputExtension ?? FormatDetector.Detect(FilePath).OutputExtension;
+
     public string ExtensionLabel
     {
         get
         {
             var detected = FormatDetector.Detect(FilePath);
 
-            if (detected.Format == RomFormat.Unknown || string.IsNullOrEmpty(detected.OutputExtension))
+            if (detected.Format == RomFormat.Unknown || string.IsNullOrEmpty(OutputExtension))
                 return Extension;
 
-            return $"{Extension}→{detected.OutputExtension}";
+            return $"{Extension}→{OutputExtension}";
         }
+    }
+
+    public bool ToggleOutputExtension()
+    {
+        string? nextOutputExtension = FormatDetector.Detect(FilePath).Format switch
+        {
+            RomFormat.Rvz => OutputExtension.ToLowerInvariant() switch
+            {
+                "wbfs" => "iso",
+                "iso" => "gcz",
+                _ => "wbfs"
+            },
+            RomFormat.Wbfs => OutputExtension.ToLowerInvariant() switch
+            {
+                "rvz" => "iso",
+                "iso" => "gcz",
+                _ => "rvz"
+            },
+            RomFormat.Wii => OutputExtension.ToLowerInvariant() switch
+            {
+                "rvz" => "wbfs",
+                "wbfs" => "gcz",
+                _ => "rvz"
+            },
+            _ => null
+        };
+
+        if (nextOutputExtension is null)
+            return false;
+
+        _outputExtension = nextOutputExtension;
+        OnPropertyChanged(nameof(OutputExtension));
+        OnPropertyChanged(nameof(ExtensionLabel));
+        return true;
     }
 
     public Brush ExtensionBackground => ExtensionColorMap.Resolve(Extension, ColorMap);

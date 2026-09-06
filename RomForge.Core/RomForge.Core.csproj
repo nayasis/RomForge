@@ -28,4 +28,7 @@
     <ProjectReference Include="..\PickPack.Disk\PickPack.Disk.csproj" />
     <ProjectReference Include="..\WiiU.Core\WiiU.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\Tools\wit-v3.05a-r8638-cygwin64.zip" />
+  </ItemGroup>
 </Project>
