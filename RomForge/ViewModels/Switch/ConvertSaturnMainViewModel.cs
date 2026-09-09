@@ -6,6 +6,7 @@ using NSW.Core.Enums;
 using NSW.M1.Core.Models;
 using NSW.M1.Core.Services;
 using NSW.WPF.Services;
+using RomForge.Core;
 using RomForge.Core.Models;
 using RomForge.Core.Services.Switch;
 using RomForge.Core.UI.Command;
@@ -97,7 +98,13 @@ namespace RomForge.ViewModels.Switch
         public string WorkPath
         {
             get => _workPath;
-            set { _workPath = value; OnPropertyChanged(); OnPropertyChanged(nameof(WorkHintVisibility)); }
+            set
+            {
+                _workPath = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(WorkHintVisibility));
+                AppConfig.Instance.OutputFolders.SwitchConvertSaturnWorkPath = value;
+            }
         }
 
         public string CoverImagePath
@@ -153,6 +160,9 @@ namespace RomForge.ViewModels.Switch
 
         public ConvertSaturnMainViewModel()
         {
+            WorkPath = string.IsNullOrWhiteSpace(AppConfig.Instance.OutputFolders.SwitchConvertSaturnWorkPath)
+                ? Path.Combine(AppConfig.ApplicationDirectory, "output")
+                : AppConfig.Instance.OutputFolders.SwitchConvertSaturnWorkPath;
             BrowseCueCommand = new RelayCommand(_ => BrowseCue());
             BrowseNspCommand = new RelayCommand(_ => BrowseNsp());
             BrowseWorkCommand = new RelayCommand(_ => BrowseWork());
@@ -309,8 +319,10 @@ namespace RomForge.ViewModels.Switch
 
         private async Task RunConversionProcess(CancellationToken token)
         {
-            if (!Directory.Exists(WorkPath))
-                WorkPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "output");
+            if (string.IsNullOrWhiteSpace(WorkPath))
+                WorkPath = Path.Combine(AppConfig.ApplicationDirectory, "output");
+
+            Directory.CreateDirectory(WorkPath);
 
             string unpackedDir = Path.Combine(WorkPath, "unpacked");
 

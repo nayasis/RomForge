@@ -53,7 +53,7 @@ public static class CiaBuilder
         int contentCount = partitions.Count;
         byte[] titleKey = RandomNumberGenerator.GetBytes(16);
 
-        string certsPath = Path.Combine(AppContext.BaseDirectory, "certs.bin");
+        string certsPath = _3DS.Core.AppPaths.GetFilePath("certs.bin");
 
         if (!File.Exists(certsPath))
             throw new CertsBinNotFoundException("certs.bin 추출 필요 / 유틸 - certs.bin 추출을 진행하세요");

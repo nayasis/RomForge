@@ -24,7 +24,7 @@ public class ConverterMainViewModel : ToolTabViewModel
 
     private static readonly HashSet<string> SupportedExtensions = [".wud", ".wux", ".wua"];
 
-    private static string KeysPath => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "keys.txt");
+    private static string KeysPath => Path.Combine(AppConfig.ApplicationDirectory, "keys.txt");
 
     #endregion
 
@@ -77,7 +77,7 @@ public class ConverterMainViewModel : ToolTabViewModel
     public ConverterMainViewModel()
     {
         OutputPath = string.IsNullOrWhiteSpace(AppConfig.Instance.OutputFolders.WiiUConvertOutputPath)
-            ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "output")
+            ? Path.Combine(AppConfig.ApplicationDirectory, "output")
             : AppConfig.Instance.OutputFolders.WiiUConvertOutputPath;
 
         RunCommand = new RelayCommand(async _ => await RunAsync(), _ => !IsConverting && FileItems.Count > 0);

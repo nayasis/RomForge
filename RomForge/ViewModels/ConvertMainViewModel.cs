@@ -7,6 +7,7 @@ using Common;
 using Common.WPF.ViewModels;
 using PBP.Core.Enums;
 using PBP.Core.Services;
+using RomForge.Core;
 using RomForge.Core.Models;
 using RomForge.Core.Models._3DS;
 using RomForge.Core.Models.CD;
@@ -39,7 +40,7 @@ public class ConvertMainViewModel : ToolTabViewModel
         ".pbp",
     };
 
-    private static string KeysPath => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "keys.txt");
+    private static string KeysPath => Path.Combine(AppConfig.ApplicationDirectory, "keys.txt");
 
     public ObservableCollection<LogEntry> LogEntries { get; } = [];
     public ObservableCollection<object> FileItems { get; } = [];

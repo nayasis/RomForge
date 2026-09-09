@@ -15,11 +15,9 @@ public class KeyStore
         for (int i = 0; i < _slots.Length; i++)
             _slots[i] = new KeySlot();
 
-        string baseDir = AppContext.BaseDirectory;
-
-        TryLoadAesKeys(Path.Combine(baseDir, "aes_keys.txt"));
-        TryLoadBoot9(Path.Combine(baseDir, "boot9.bin"));
-        TryLoadSeedDb(Path.Combine(baseDir, "seeddb.bin"));
+        TryLoadAesKeys(_3DS.Core.AppPaths.GetFilePath("aes_keys.txt"));
+        TryLoadBoot9(_3DS.Core.AppPaths.GetFilePath("boot9.bin"));
+        TryLoadSeedDb(_3DS.Core.AppPaths.GetFilePath("seeddb.bin"));
     }
 
     private void TryLoadAesKeys(string path)

@@ -31,7 +31,8 @@ public sealed class KeySetProvider
 
     public void TryLoadKeys()
     {
-        string keysPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "prod.keys");
+        string applicationDirectory = Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
+        string keysPath = Path.Combine(applicationDirectory, "prod.keys");
         if (File.Exists(keysPath))
         {
             try { _keySet = ExternalKeyReader.ReadKeyFile(keysPath); }

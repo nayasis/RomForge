@@ -56,6 +56,13 @@ public class PatchConfig : ViewModelBase
         get => _createElPackageWhenCompleted;
         set { SetProperty(ref _createElPackageWhenCompleted, value); }
     }
+
+    private bool _autoScrollLogs;
+    public bool AutoScrollLogs
+    {
+        get => _autoScrollLogs;
+        set { SetProperty(ref _autoScrollLogs, value); }
+    }
 }
 
 public class ChdmanConfig : ViewModelBase
@@ -138,6 +145,9 @@ public class OutputFoldersConfig : ViewModelBase
     private string? _switchMergeOutputPath;
     public string? SwitchMergeOutputPath { get => _switchMergeOutputPath; set => SetProperty(ref _switchMergeOutputPath, value); }
 
+    private string? _switchConvertSaturnWorkPath;
+    public string? SwitchConvertSaturnWorkPath { get => _switchConvertSaturnWorkPath; set => SetProperty(ref _switchConvertSaturnWorkPath, value); }
+
     private string? _wiiURepackOutputPath;
     public string? WiiURepackOutputPath { get => _wiiURepackOutputPath; set => SetProperty(ref _wiiURepackOutputPath, value); }
 
@@ -155,6 +165,8 @@ public class AppConfig : ViewModelBase
 
     private static readonly Lazy<AppConfig> _instance = new(() => new AppConfig().LoadInternal());
     public static AppConfig Instance => _instance.Value;
+
+    public static string ApplicationDirectory => Path.GetDirectoryName(Environment.ProcessPath) ?? AppContext.BaseDirectory;
 
     private CommonConfig _common = new();
     public CommonConfig Common { get => _common; set => SetProperty(ref _common, value); }

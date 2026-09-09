@@ -1,5 +1,6 @@
 ﻿using Common;
 using Common.WPF.ViewModels;
+using RomForge.Core;
 using RomForge.Core.UI.Command;
 using RomForge.Core.Models;
 using RomForge.Core.Models._3DS;
@@ -74,7 +75,7 @@ public class CertsMainViewModel : ToolTabViewModel
 
     public Visibility RomInfoVisibility => RomInfo != null ? Visibility.Visible : Visibility.Collapsed;
 
-    public static string OutputPath => Path.Combine(AppContext.BaseDirectory, OutputFileName);
+    public static string OutputPath => Path.Combine(AppConfig.ApplicationDirectory, OutputFileName);
 
     public string ProgressStatus => SelectedFile == null ? "파일을 드래그&드롭하거나 선택하세요" : $"출력: {OutputPath}";
 

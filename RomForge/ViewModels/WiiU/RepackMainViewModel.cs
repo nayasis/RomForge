@@ -29,7 +29,7 @@ public class RepackMainViewModel : ToolTabViewModel
     private string _progressTime = "00:00 경과";
     private string _progressSpeed = string.Empty;
 
-    private static string KeysPath => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "keys.txt");
+    private static string KeysPath => Path.Combine(AppConfig.ApplicationDirectory, "keys.txt");
 
     private RepackOutputFormat _outputFormat = RepackOutputFormat.Wua;
     public RepackOutputFormat OutputFormat
@@ -131,7 +131,7 @@ public class RepackMainViewModel : ToolTabViewModel
     public RepackMainViewModel()
     {
         OutputPath = string.IsNullOrWhiteSpace(AppConfig.Instance.OutputFolders.WiiURepackOutputPath)
-            ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "output")
+            ? Path.Combine(AppConfig.ApplicationDirectory, "output")
             : AppConfig.Instance.OutputFolders.WiiURepackOutputPath;
 
         RemoveSelectedCommand = new RelayCommand(_ => RemoveSelected(), _ => HasSelection);
