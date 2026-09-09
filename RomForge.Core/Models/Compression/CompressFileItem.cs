@@ -26,8 +26,15 @@ public class CompressFileItem(string filePath) : FileItemBase(filePath)
 
     public bool ToggleOutputExtension()
     {
-        string? nextOutputExtension = FormatDetector.Detect(FilePath).Format switch
+        var detected = FormatDetector.Detect(FilePath);
+
+        string? nextOutputExtension = detected.Format switch
         {
+            RomFormat.Rvz when detected.OutputExtension.Equals("gcm", StringComparison.OrdinalIgnoreCase) => OutputExtension.ToLowerInvariant() switch
+            {
+                "gcm" => "gcz",
+                _ => "gcm"
+            },
             RomFormat.Rvz => OutputExtension.ToLowerInvariant() switch
             {
                 "wbfs" => "iso",
@@ -46,6 +53,8 @@ public class CompressFileItem(string filePath) : FileItemBase(filePath)
                 "wbfs" => "gcz",
                 _ => "rvz"
             },
+            RomFormat.Gcm => OutputExtension.Equals("rvz", StringComparison.OrdinalIgnoreCase) ? "gcz" : "rvz",
+            RomFormat.Gcz => OutputExtension.Equals("rvz", StringComparison.OrdinalIgnoreCase) ? "iso" : "rvz",
             _ => null
         };
 

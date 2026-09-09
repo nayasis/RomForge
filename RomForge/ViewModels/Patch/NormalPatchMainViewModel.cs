@@ -3,9 +3,11 @@ using Common.WPF.ViewModels;
 using NSW.WPF.Services;
 using RomForge.Core;
 using RomForge.Core.Models;
+using RomForge.Core.Models.Compression;
 using RomForge.Core.Services;
 using RomForge.Core.Models.Patch;
 using RomForge.Core.Services.Patch;
+using RomForge.Core.Services.Compression;
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
@@ -73,6 +75,16 @@ public class NormalPatchMainViewModel : ToolTabViewModel, IPatchViewModel
         }
     }
 
+    public bool AutoScrollLogs
+    {
+        get => AppConfig.Instance.Patch.AutoScrollLogs;
+        set
+        {
+            AppConfig.Instance.Patch.AutoScrollLogs = value;
+            OnPropertyChanged(nameof(AutoScrollLogs));
+        }
+    }
+
     public Func<IReadOnlyList<ArchiveCandidate>, Task<string?>>? RequestSourceSelectionAsync { get; set; }
 
     public string SourceLabel => Path.GetFileName(SourcePath) ?? "원본 파일 또는 디렉토리를 드래그하거나 클릭하세요";
@@ -125,6 +137,7 @@ public class NormalPatchMainViewModel : ToolTabViewModel, IPatchViewModel
             {
                 OnPropertyChanged(nameof(AutoCompress));
                 OnPropertyChanged(nameof(CreateElPackageWhenCompleted));
+                OnPropertyChanged(nameof(AutoScrollLogs));
             }
         };
 
@@ -135,6 +148,9 @@ public class NormalPatchMainViewModel : ToolTabViewModel, IPatchViewModel
 
             if (e.PropertyName == nameof(PatchConfig.CreateElPackageWhenCompleted))
                 OnPropertyChanged(nameof(CreateElPackageWhenCompleted));
+
+            if (e.PropertyName == nameof(PatchConfig.AutoScrollLogs))
+                OnPropertyChanged(nameof(AutoScrollLogs));
         };
     }
 
@@ -159,6 +175,7 @@ public class NormalPatchMainViewModel : ToolTabViewModel, IPatchViewModel
         string? outputPath = null;
         string completionDir = outputDir;
         string selectedSourcePath = SourcePath;
+        bool selectedSourceIsGdiTrack = false;
         string? existingElPackageRoot = !sourceIsDirectory && AppConfig.Instance.Patch.CreateElPackageWhenCompleted
             ? GetElPackageRoot(selectedSourcePath)
             : null;
@@ -190,6 +207,7 @@ public class NormalPatchMainViewModel : ToolTabViewModel, IPatchViewModel
                 }
 
                 selectedSourcePath = directorySource.SourcePath;
+                selectedSourceIsGdiTrack = directorySource.IsGdiTrack;
                 existingElPackageRoot = directorySource.IsExistingElPackage && AppConfig.Instance.Patch.CreateElPackageWhenCompleted
                     ? directorySource.ExistingPackageRoot
                     : null;
@@ -236,21 +254,67 @@ public class NormalPatchMainViewModel : ToolTabViewModel, IPatchViewModel
             }
 
             extractDir ??= Path.Combine(outputDir, "_src_" + Path.GetFileNameWithoutExtension(actualSourcePath));
-
-            var (resolvedSourcePath, detected) = await CompressedSourceDecompressor.ResolveAsync(actualSourcePath, extractDir, Log, BuildProgressReporter(), ct);
-
-            actualSourcePath = resolvedSourcePath;
-
-            bool sourceIsTemporary = Path.GetFullPath(Path.GetDirectoryName(actualSourcePath)!)
-                .Equals(Path.GetFullPath(extractDir), StringComparison.OrdinalIgnoreCase);
-
-            outputPath = Path.Combine(outputDir, Path.GetFileName(actualSourcePath));
-            outputPath = Utils.GetUniqueFilePath(outputPath);
             var outputEntriesBefore = ElPackageCreator.CaptureOutputEntries(outputDir);
+            bool directCompressedPatchApplied = false;
+            DetectResult detected = new();
+            bool sourceIsTemporary = false;
+
+            string CreateOutputPath(string sourcePath)
+            {
+                string outputFileName = selectedSourceIsGdiTrack
+                    ? Path.GetFileName(Path.TrimEndingDirectorySeparator(sourceRootDirectory)) + Path.GetExtension(sourcePath)
+                    : Path.GetFileName(sourcePath);
+
+                return Utils.GetUniqueFilePath(Path.Combine(outputDir, outputFileName));
+            }
+
+            outputPath = CreateOutputPath(actualSourcePath);
 
             Log($"패치 시작: {Path.GetFileName(actualSourcePath)}", LogLevel.Highlight);
 
-            await orchestrator.PatchAsync(actualSourcePath, PatchPath, detected, outputDir, outputPath, sourceIsTemporary, ct);
+            directCompressedPatchApplied = await CompressedSourcePatchProbe.TryApplyAsync(
+                actualSourcePath,
+                PatchPath,
+                outputPath,
+                Log,
+                BuildProgressReporter(),
+                ct);
+
+            if (directCompressedPatchApplied)
+            {
+                detected = FormatDetector.Detect(actualSourcePath);
+                sourceIsTemporary = Path.GetFullPath(Path.GetDirectoryName(actualSourcePath)!)
+                    .Equals(Path.GetFullPath(extractDir), StringComparison.OrdinalIgnoreCase);
+
+                await orchestrator.CompletePatchedFileAsync(actualSourcePath, detected, outputDir, outputPath, sourceIsTemporary, ct);
+            }
+
+            if (!directCompressedPatchApplied)
+            {
+                var (resolvedSourcePath, resolvedDetected) = await CompressedSourceDecompressor.ResolveAsync(actualSourcePath, extractDir, Log, BuildProgressReporter(), ct);
+
+                actualSourcePath = resolvedSourcePath;
+                detected = resolvedDetected;
+
+                if (selectedSourceIsGdiTrack)
+                {
+                    detected = new DetectResult
+                    {
+                        Format = RomFormat.Gdi,
+                        Direction = ConvertDirection.Compress,
+                        OutputExtension = "chd"
+                    };
+                }
+
+                sourceIsTemporary = Path.GetFullPath(Path.GetDirectoryName(actualSourcePath)!)
+                    .Equals(Path.GetFullPath(extractDir), StringComparison.OrdinalIgnoreCase);
+
+                outputPath = CreateOutputPath(actualSourcePath);
+
+                Log($"패치 시작: {Path.GetFileName(actualSourcePath)}", LogLevel.Highlight);
+
+                await orchestrator.PatchAsync(actualSourcePath, PatchPath, detected, outputDir, outputPath, sourceIsTemporary, ct);
+            }
 
             var generatedOutputEntries = ElPackageCreator.GetNewOutputEntries(outputDir, outputEntriesBefore);
 
@@ -267,7 +331,12 @@ public class NormalPatchMainViewModel : ToolTabViewModel, IPatchViewModel
                     Log($"patch.log 기록 실패: {ex.Message}", LogLevel.Error);
                 }
 
-                elPackageCreator.InstallPackageResult(existingElPackageRoot, existingPackageSourcePaths!, outputDir, generatedOutputEntries);
+                elPackageCreator.InstallPackageResult(
+                    existingElPackageRoot,
+                    existingPackageSourcePaths!,
+                    outputDir,
+                    generatedOutputEntries,
+                    Path.GetFileNameWithoutExtension(selectedSourcePath));
                 completionDir = existingElPackageRoot;
             }
             else if (AppConfig.Instance.Patch.CreateElPackageWhenCompleted)

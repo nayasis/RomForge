@@ -32,6 +32,7 @@ public class DolphinService
     public Task ConvertFileAsync(string inputPath, string format, string outputExtension, int compressionLevel = 18, string? outputDir = null, CancellationToken ct = default)
     {
         format = format.ToLowerInvariant();
+        outputExtension = outputExtension.ToLowerInvariant();
 
         return Task.Run(() =>
         {
@@ -40,7 +41,9 @@ public class DolphinService
                 "wii" or "gcm" or "wia" => "압축",
                 "wbfs" when outputExtension.Equals("iso", StringComparison.OrdinalIgnoreCase) => "해제",
                 "wbfs" => "압축",
+                "gcz" when outputExtension == "iso" => "해제",
                 "gcz" => "재압축",
+                "rvz" when outputExtension == "gcz" => "재압축",
                 "rvz" => "해제",
                 _ => "미지원"
             };
@@ -73,6 +76,12 @@ public class DolphinService
             {
                 result = format switch
                 {
+                    "wii" or "gcm" or "wia" when outputExtension == "gcz" =>
+                        rvz_convert_to_gcz(inputPath, outputPath, 131072, progressCb, logCb),
+
+                    "gcz" when outputExtension == "iso" =>
+                        rvz_convert_to_iso(inputPath, outputPath, outputExtension, progressCb, logCb),
+
                     "wii" or "gcm" or "wia" or "gcz" =>
                         rvz_convert_to_rvz(inputPath, outputPath, "zstd", compressionLevel, 131072, progressCb, logCb),
 

@@ -1,12 +1,13 @@
 using Common;
 using Patch.Core;
 using Patch.Core.Enums;
+using Patch.Core.Formats.DCP.Services;
 using System.IO;
 using System.Text;
 
 namespace RomForge.Core.Services.Patch;
 
-public sealed record DirectoryPatchSource(string SourcePath, string? ExistingPackageRoot)
+public sealed record DirectoryPatchSource(string SourcePath, string? ExistingPackageRoot, bool IsGdiTrack)
 {
     public bool IsExistingElPackage => ExistingPackageRoot is not null;
 }
@@ -18,6 +19,8 @@ public sealed record DirectoryPatchLocation(string SourceDirectory, string? Exis
 
 public class DirectoryPatchSourceResolver(Action<string, LogLevel> log)
 {
+    private static readonly TimeSpan SourceProbeDuration = TimeSpan.FromSeconds(2);
+
     private static readonly HashSet<string> IgnoredExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".txt", ".log", ".nfo", ".diz", ".url", ".ini", ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".md5", ".sfv", ".pdf"
@@ -37,7 +40,7 @@ public class DirectoryPatchSourceResolver(Action<string, LogLevel> log)
                 string loggedSourcePath = Path.Combine(candidateDirectory, fileName!);
 
                 if (File.Exists(loggedSourcePath))
-                    return new DirectoryPatchSource(loggedSourcePath, location.ExistingPackageRoot);
+                    return new DirectoryPatchSource(loggedSourcePath, location.ExistingPackageRoot, IsGdiTrack(loggedSourcePath));
             }
         }
 
@@ -51,7 +54,7 @@ public class DirectoryPatchSourceResolver(Action<string, LogLevel> log)
         if (isExistingElPackage)
             UpdatePatchLog(patchLogPath, discoveredSourcePath);
 
-        return new DirectoryPatchSource(discoveredSourcePath, location.ExistingPackageRoot);
+        return new DirectoryPatchSource(discoveredSourcePath, location.ExistingPackageRoot, IsGdiTrack(discoveredSourcePath));
     }
 
     public static DirectoryPatchLocation ResolveLocation(string directoryPath)
@@ -82,6 +85,30 @@ public class DirectoryPatchSourceResolver(Action<string, LogLevel> log)
     private static string? FindDcpSource(string candidateDirectory) =>
         Directory.EnumerateFiles(candidateDirectory, "*.gdi", SearchOption.TopDirectoryOnly).FirstOrDefault();
 
+    private static bool IsGdiTrack(string sourcePath)
+    {
+        string? sourceDirectory = Path.GetDirectoryName(sourcePath);
+
+        if (sourceDirectory is null || Path.GetExtension(sourcePath).Equals(".gdi", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        string sourceFileName = Path.GetFileName(sourcePath);
+
+        foreach (string gdiPath in Directory.EnumerateFiles(sourceDirectory, "*.gdi", SearchOption.TopDirectoryOnly))
+        {
+            try
+            {
+                if (GdiFile.Parse(gdiPath).Tracks.Any(track => string.Equals(track.FileName, sourceFileName, StringComparison.OrdinalIgnoreCase)))
+                    return true;
+            }
+            catch
+            {
+            }
+        }
+
+        return false;
+    }
+
     private async Task<string?> FindCompatibleSourceAsync(string candidateDirectory, string patchPath, CancellationToken ct)
     {
         string fullPatchPath = Path.GetFullPath(patchPath);
@@ -105,17 +132,23 @@ public class DirectoryPatchSourceResolver(Action<string, LogLevel> log)
             ct.ThrowIfCancellationRequested();
 
             string temporaryOutputPath = Path.GetTempFileName();
+            using var probeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            probeCts.CancelAfter(SourceProbeDuration);
 
             try
             {
                 File.Delete(temporaryOutputPath);
-                await UniversalPatcher.ApplyPatchAsync(candidatePath, patchPath, temporaryOutputPath, null, ct);
+                await UniversalPatcher.ApplyPatchAsync(candidatePath, patchPath, temporaryOutputPath, null, probeCts.Token);
                 log($"패치 원본 자동 선택: {Path.GetFileName(candidatePath)}", LogLevel.Ok);
                 return candidatePath;
             }
             catch (OperationCanceledException)
             {
-                throw;
+                if (ct.IsCancellationRequested)
+                    throw;
+
+                log($"패치 원본 자동 선택: {Path.GetFileName(candidatePath)} (빠른 검증)", LogLevel.Ok);
+                return candidatePath;
             }
             catch
             {

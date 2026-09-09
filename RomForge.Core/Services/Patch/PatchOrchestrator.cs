@@ -149,6 +149,13 @@ public class PatchOrchestrator(Action<string, LogLevel> log, IProgress<ProgressI
 
     private async Task FinalizePatchedFileAsync(string sourcePath, DetectResult detected, string outputDir, string outputPath, bool sourceIsTemporary, CancellationToken ct)
     {
+        if (detected.Format is RomFormat.Chd or RomFormat.Rvz)
+        {
+            progress.Report(new ProgressInfo { Label = "패치 완료", Percent = 100 });
+            log($"압축 원본 직접 패치 완료: {outputPath}", LogLevel.Ok);
+            return;
+        }
+
         bool isZipTarget = detected.Format is not (RomFormat.Bin or RomFormat.Iso or RomFormat.Gcm or RomFormat.Wii or RomFormat.Wbfs or RomFormat.Ccd or RomFormat.Cci or RomFormat.Cia or RomFormat.Gdi);
 
         progress.Report(new ProgressInfo { Label = "패치 완료", Percent = 100 });
@@ -170,6 +177,9 @@ public class PatchOrchestrator(Action<string, LogLevel> log, IProgress<ProgressI
         {
             _outputGdiPath = _gdiTrackCopier.CopyGdiTracks(sourcePath, outputDir, outputPath, _copiedTrackPaths, sourceIsTemporary);
             skipCompress = _outputGdiPath is null;
+
+            if (_outputGdiPath is not null)
+                log($"GDI 재구성 완료: {_outputGdiPath}", LogLevel.Info);
         }
 
         if (!autoCompress || skipCompress)

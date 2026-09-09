@@ -76,6 +76,7 @@ public class CompressKnownConverter(Action<string, LogLevel> log, IProgress<Prog
             case RomFormat.Gdi:
                 {
                     progress.Report(new ProgressInfo { Label = "CHD 변환 중...", Percent = 0 });
+                    log($"GDI CHD 입력: {outputGdiPath}", LogLevel.Highlight);
 
                     FileConverter converter = new(AppConfig.Instance.Chdman.Compression);
                     converter.LogMessage += (_, e) => log(e.Message, e.Level);

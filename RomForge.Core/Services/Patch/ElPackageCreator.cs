@@ -200,7 +200,7 @@ public class ElPackageCreator(Action<string, LogLevel> log)
         }
     }
 
-    public void InstallPackageResult(string packageRoot, IEnumerable<string> sourcePaths, string outputDir, IEnumerable<string> outputEntries)
+    public void InstallPackageResult(string packageRoot, IEnumerable<string> sourcePaths, string outputDir, IEnumerable<string> outputEntries, string? obsoleteResultStem = null)
     {
         var generatedPaths = outputEntries
             .Where(path => File.Exists(path) || Directory.Exists(path))
@@ -213,7 +213,7 @@ public class ElPackageCreator(Action<string, LogLevel> log)
 
         foreach (var generatedPath in generatedPaths)
         {
-            var resultTarget = ResolveResultTargetPath(packageRoot, generatedPath, sourceFileNames);
+            var resultTarget = ResolveResultTargetPath(packageRoot, generatedPath, sourceFileNames, obsoleteResultStem);
             string targetPath = resultTarget.TargetPath;
 
             if (File.Exists(generatedPath) && File.Exists(targetPath))
@@ -236,7 +236,7 @@ public class ElPackageCreator(Action<string, LogLevel> log)
         CleanupOutputDirectory(outputDir);
     }
 
-    private static (string TargetPath, string? ObsoletePath) ResolveResultTargetPath(string packageRoot, string generatedPath, IReadOnlySet<string> sourceFileNames)
+    private static (string TargetPath, string? ObsoletePath) ResolveResultTargetPath(string packageRoot, string generatedPath, IReadOnlySet<string> sourceFileNames, string? obsoleteResultStem)
     {
         string generatedFileName = Path.GetFileName(generatedPath);
         string directTargetPath = Path.Combine(packageRoot, generatedFileName);
@@ -247,6 +247,15 @@ public class ElPackageCreator(Action<string, LogLevel> log)
         if (File.Exists(generatedPath))
         {
             string outputExtension = Path.GetExtension(generatedPath);
+
+            if (!string.IsNullOrWhiteSpace(obsoleteResultStem))
+            {
+                string obsoletePath = Path.Combine(packageRoot, obsoleteResultStem + outputExtension);
+
+                if (File.Exists(obsoletePath))
+                    return (directTargetPath, obsoletePath);
+            }
+
             var similarTargets = Directory.EnumerateFiles(packageRoot)
                 .Where(path => HasSimilarGameName(Path.GetFileNameWithoutExtension(path), Path.GetFileNameWithoutExtension(generatedPath)))
                 .Where(path => !string.Equals(Path.GetExtension(path), outputExtension, StringComparison.OrdinalIgnoreCase)
