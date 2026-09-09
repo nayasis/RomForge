@@ -18,9 +18,19 @@ public static class LogRichTextBehavior
         typeof(LogRichTextBehavior),
         new PropertyMetadata(null, OnEntriesChanged));
 
+    public static readonly DependencyProperty AutoScrollProperty = DependencyProperty.RegisterAttached(
+        "AutoScroll",
+        typeof(bool),
+        typeof(LogRichTextBehavior),
+        new PropertyMetadata(false, OnAutoScrollChanged));
+
     public static void SetEntries(DependencyObject obj, ObservableCollection<LogEntry>? value) => obj.SetValue(EntriesProperty, value);
 
     public static ObservableCollection<LogEntry>? GetEntries(DependencyObject obj) => (ObservableCollection<LogEntry>?)obj.GetValue(EntriesProperty);
+
+    public static void SetAutoScroll(DependencyObject obj, bool value) => obj.SetValue(AutoScrollProperty, value);
+
+    public static bool GetAutoScroll(DependencyObject obj) => (bool)obj.GetValue(AutoScrollProperty);
 
     private static void OnEntriesChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
@@ -30,6 +40,7 @@ public static class LogRichTextBehavior
         if (Subscriptions.Get(logBox) is { } previous)
         {
             previous.Entries.CollectionChanged -= previous.Handler;
+            logBox.SizeChanged -= previous.SizeChangedHandler;
             Subscriptions.Remove(logBox);
         }
 
@@ -40,13 +51,30 @@ public static class LogRichTextBehavior
         }
 
         NotifyCollectionChangedEventHandler handler = (_, args) =>
-            logBox.Dispatcher.InvokeAsync(
-                () => UpdateDocument(logBox, entries, args),
-                DispatcherPriority.Background);
+        {
+            if (logBox.Dispatcher.CheckAccess())
+                UpdateDocument(logBox, entries, args);
+            else
+                _ = logBox.Dispatcher.InvokeAsync(
+                    () => UpdateDocument(logBox, entries, args),
+                    DispatcherPriority.Background);
+        };
+        SizeChangedEventHandler sizeChangedHandler = (_, _) =>
+        {
+            if (GetAutoScroll(logBox))
+                ScrollToEnd(logBox);
+        };
 
         entries.CollectionChanged += handler;
-        Subscriptions.Set(logBox, new Subscription(entries, handler));
+        logBox.SizeChanged += sizeChangedHandler;
+        Subscriptions.Set(logBox, new Subscription(entries, handler, sizeChangedHandler));
         RebuildDocument(logBox, entries);
+    }
+
+    private static void OnAutoScrollChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is RichTextBox logBox && e.NewValue is true)
+            ScrollToEnd(logBox);
     }
 
     private static void UpdateDocument(RichTextBox logBox, ObservableCollection<LogEntry> entries, NotifyCollectionChangedEventArgs args)
@@ -59,7 +87,7 @@ public static class LogRichTextBehavior
             foreach (LogEntry entry in args.NewItems)
                 AppendEntry(logBox.Document, entry);
 
-            ScrollToEnd(logBox);
+            ScrollToEndIfEnabled(logBox);
             return;
         }
 
@@ -75,7 +103,7 @@ public static class LogRichTextBehavior
         foreach (var entry in entries)
             AppendEntry(document, entry);
 
-        ScrollToEnd(logBox);
+        ScrollToEndIfEnabled(logBox);
     }
 
     private static void AppendEntry(FlowDocument document, LogEntry entry)
@@ -100,8 +128,17 @@ public static class LogRichTextBehavior
 
     private static void ScrollToEnd(RichTextBox logBox)
     {
-        logBox.CaretPosition = logBox.Document.ContentEnd;
-        logBox.ScrollToEnd();
+        _ = logBox.Dispatcher.InvokeAsync(() =>
+        {
+            logBox.CaretPosition = logBox.Document.ContentEnd;
+            logBox.ScrollToEnd();
+        }, DispatcherPriority.Background);
+    }
+
+    private static void ScrollToEndIfEnabled(RichTextBox logBox)
+    {
+        if (GetAutoScroll(logBox))
+            ScrollToEnd(logBox);
     }
 
     private static class Subscriptions
@@ -119,9 +156,10 @@ public static class LogRichTextBehavior
         public static void Remove(RichTextBox logBox) => Table.Remove(logBox);
     }
 
-    private sealed class Subscription(ObservableCollection<LogEntry> entries, NotifyCollectionChangedEventHandler handler)
+    private sealed class Subscription(ObservableCollection<LogEntry> entries, NotifyCollectionChangedEventHandler handler, SizeChangedEventHandler sizeChangedHandler)
     {
         public ObservableCollection<LogEntry> Entries { get; } = entries;
         public NotifyCollectionChangedEventHandler Handler { get; } = handler;
+        public SizeChangedEventHandler SizeChangedHandler { get; } = sizeChangedHandler;
     }
 }

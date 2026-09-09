@@ -29,6 +29,7 @@ public partial class MainWindow : Window
         Closing += MainWindow_Closing;
         Activated += MainWindow_Activated;
         PreviewMouseDown += MainWindow_PreviewMouseDown;
+        Loaded += (_, _) => ApplyLogRowProportions();
         ViewModel.PatchVM.PatchCompleted += PatchVM_PatchCompleted;
 
         RestoreWindowState();
@@ -143,7 +144,28 @@ public partial class MainWindow : Window
         _ = Win32API.DwmSetWindowAttribute(hWnd, 20, ref value, sizeof(int));
     }
 
-    private void GridSplitter_DragCompleted(object sender, DragCompletedEventArgs e) => MainViewModel.LogBoxHeight = LogRow.Height.Value;
+    private void GridSplitter_DragCompleted(object sender, DragCompletedEventArgs e)
+    {
+        MainViewModel.LogBoxHeight = LogRow.ActualHeight;
+        SetLogRowProportions(ContentRow.ActualHeight, LogRow.ActualHeight);
+    }
+
+    private void ApplyLogRowProportions()
+    {
+        if (MainGrid.ActualHeight <= 0)
+            return;
+
+        double availableHeight = MainGrid.ActualHeight - LogSplitter.ActualHeight;
+        double maxLogHeight = Math.Max(LogRow.MinHeight, availableHeight - ContentRow.MinHeight);
+        double logHeight = Math.Clamp(MainViewModel.LogBoxHeight, LogRow.MinHeight, maxLogHeight);
+        SetLogRowProportions(availableHeight - logHeight, logHeight);
+    }
+
+    private void SetLogRowProportions(double contentHeight, double logHeight)
+    {
+        ContentRow.Height = new GridLength(Math.Max(1, contentHeight), GridUnitType.Star);
+        LogRow.Height = new GridLength(Math.Max(1, logHeight), GridUnitType.Star);
+    }
 
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
     {

@@ -8,7 +8,8 @@
         </Grid.RowDefinitions>
 
         <ListView x:Name="fileList" Grid.Row="0" Margin="5,0,5,5" ItemsSource="{Binding FileItems}" SelectionMode="Extended" IsEnabled="{Binding IsUnlocked}" AllowDrop="True"
-                  Drop="FileList_Drop" DragOver="FileList_DragOver" KeyUp="FileList_KeyUp">
+                  Drop="FileList_Drop" DragOver="FileList_DragOver" KeyUp="FileList_KeyUp"
+                  PreviewMouseLeftButtonDown="FileList_PreviewMouseLeftButtonDown" PreviewMouseMove="FileList_PreviewMouseMove">
             <ListView.View>
                 <GridView>
                     <GridViewColumn Width="320" DisplayMemberBinding="{Binding GroupName}">

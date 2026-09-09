@@ -14,16 +14,16 @@
         xmlns:helpers="clr-namespace:RomForge.Core.UI.Helpers;assembly=RomForge.Core"
         Title="{Binding AppVersion}"
         Height="715" Width="900"
-        MinHeight="480" MinWidth="900"
+        MinHeight="520" MinWidth="700"
         Background="#1E1E1E"
         AllowDrop="True"
         FontFamily="Segoe UI">
 
-    <Grid>
+    <Grid x:Name="MainGrid">
         <Grid.RowDefinitions>
-            <RowDefinition Height="*" MinHeight="340"/>
+            <RowDefinition x:Name="ContentRow" Height="*" MinHeight="435"/>
             <RowDefinition Height="5"/>
-            <RowDefinition x:Name="LogRow" Height="{Binding LogBoxHeight}" MinHeight="40"/>
+            <RowDefinition x:Name="LogRow" Height="*" MinHeight="40"/>
         </Grid.RowDefinitions>
 
         <TabControl SelectedIndex="{Binding SelectedTabIndex}">
@@ -121,7 +121,7 @@
 
         </TabControl>
 
-        <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch" Cursor="SizeNS"
+        <GridSplitter x:Name="LogSplitter" Grid.Row="1" Height="5" HorizontalAlignment="Stretch" Cursor="SizeNS"
               DragCompleted="GridSplitter_DragCompleted">
             <GridSplitter.Style>
                 <Style TargetType="GridSplitter">
@@ -139,7 +139,7 @@
         </GridSplitter>
 
         <Border BorderBrush="#444444" BorderThickness="1" CornerRadius="10" Background="Transparent" Grid.Row="2">
-            <RichTextBox x:Name="logBox" Style="{StaticResource LogBox}" helpers:LogRichTextBehavior.Entries="{Binding ActiveLogEntries}"/>
+            <RichTextBox x:Name="logBox" Style="{StaticResource LogBox}" helpers:LogRichTextBehavior.Entries="{Binding ActiveLogEntries}" helpers:LogRichTextBehavior.AutoScroll="{Binding PatchVM.NormalVM.AutoScrollLogs}"/>
         </Border>
     </Grid>
 </Window>

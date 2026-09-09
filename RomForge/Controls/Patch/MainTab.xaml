@@ -61,6 +61,7 @@
                             <TextBlock Text="해시 계산" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
+                    <CheckBox Content="로그 자동 스크롤" IsChecked="{Binding PatchVM.NormalVM.AutoScrollLogs}" Foreground="#DDDDDD" VerticalAlignment="Center" Margin="8,0,0,0"/>
                 </StackPanel>
             </DockPanel>
         </Border>

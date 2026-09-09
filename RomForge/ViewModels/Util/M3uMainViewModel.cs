@@ -56,6 +56,8 @@ public sealed class M3uMainViewModel : ToolTabViewModel
             }
         }
 
+        SortItems();
+
         OnPropertyChanged(nameof(HintVisibility));
         CommandManager.InvalidateRequerySuggested();
         return Task.CompletedTask;
@@ -76,6 +78,30 @@ public sealed class M3uMainViewModel : ToolTabViewModel
         _hasCompleted = false;
         OnPropertyChanged(nameof(HintVisibility));
         CommandManager.InvalidateRequerySuggested();
+    }
+
+    public bool MoveItem(M3uFileItem source, M3uFileItem target, bool insertAfter)
+    {
+        if (ReferenceEquals(source, target)
+            || !string.Equals(source.GroupPath, target.GroupPath, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        int sourceIndex = FileItems.IndexOf(source);
+        int targetIndex = FileItems.IndexOf(target);
+
+        if (sourceIndex < 0 || targetIndex < 0)
+            return false;
+
+        int destinationIndex = targetIndex + (insertAfter ? 1 : 0);
+
+        if (sourceIndex < destinationIndex)
+            destinationIndex--;
+
+        if (sourceIndex == destinationIndex)
+            return false;
+
+        FileItems.Move(sourceIndex, destinationIndex);
+        return true;
     }
 
     private async Task RunAsync()
@@ -99,10 +125,10 @@ public sealed class M3uMainViewModel : ToolTabViewModel
                     _cts.Token.ThrowIfCancellationRequested();
 
                     var result = await Task.Run(
-                        () => M3uFileCreator.CreateIfMissing(group.Key, group.Select(item => item.FilePath)),
+                        () => M3uFileCreator.CreateOrOverwrite(group.Key, group.Select(item => item.FilePath)),
                         _cts.Token);
 
-                    AppendLog(result.Created ? $"M3U 생성 완료: {result.Path}" : $"기존 M3U 유지: {result.Path}", LogLevel.Ok);
+                    AppendLog(result.Created ? $"M3U 생성 완료: {result.Path}" : $"기존 M3U 덮어쓰기 완료: {result.Path}", LogLevel.Ok);
                 }
 
                 _hasCompleted = true;
@@ -122,5 +148,21 @@ public sealed class M3uMainViewModel : ToolTabViewModel
     private void AppendLog(string message, LogLevel level)
     {
         Application.Current?.Dispatcher?.Invoke(() => LogEntries.Add(new LogEntry { Message = message, Level = level }));
+    }
+
+    private void SortItems()
+    {
+        var sortedItems = FileItems
+            .OrderBy(item => item.GroupPath, StringComparer.Ordinal)
+            .ThenBy(item => item.FileName, StringComparer.Ordinal)
+            .ToList();
+
+        if (FileItems.SequenceEqual(sortedItems))
+            return;
+
+        FileItems.Clear();
+
+        foreach (var item in sortedItems)
+            FileItems.Add(item);
     }
 }
