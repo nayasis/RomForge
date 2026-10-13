@@ -7,6 +7,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 
 namespace RomForge.Controls;
@@ -14,6 +15,9 @@ namespace RomForge.Controls;
 public partial class CompressTab : UserControl
 {
     private readonly ListViewColumnSorter _sorter = new();
+    private GridViewColumnHeader? _resizingHeader;
+    private double _resizeStartX;
+    private double _resizeStartWidth;
 
     private MainViewModel ViewModel => (MainViewModel)DataContext;
 
@@ -62,6 +66,58 @@ public partial class CompressTab : UserControl
         var selected = lvFiles.SelectedItems.Cast<CompressFileItem>().ToList();
 
         ViewModel.CompressVM.RemoveItems(selected);
+    }
+
+    private void LvFiles_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        var header = FindColumnHeader(e.OriginalSource as DependencyObject);
+
+        if (header?.Column is null || e.GetPosition(header).X < header.ActualWidth - 10)
+            return;
+
+        _resizingHeader = header;
+        _resizeStartX = e.GetPosition(lvFiles).X;
+        _resizeStartWidth = header.Column.ActualWidth;
+        Mouse.Capture(lvFiles);
+        e.Handled = true;
+    }
+
+    private void LvFiles_PreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (_resizingHeader?.Column is not null)
+        {
+            _resizingHeader.Column.Width = Math.Max(40, _resizeStartWidth + e.GetPosition(lvFiles).X - _resizeStartX);
+            e.Handled = true;
+            return;
+        }
+
+        var header = FindColumnHeader(e.OriginalSource as DependencyObject);
+        Cursor = header?.Column is not null && e.GetPosition(header).X >= header.ActualWidth - 10
+            ? Cursors.SizeWE
+            : Cursors.Arrow;
+    }
+
+    private void LvFiles_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (_resizingHeader is null)
+            return;
+
+        _resizingHeader = null;
+        Mouse.Capture(null);
+        e.Handled = true;
+    }
+
+    private static GridViewColumnHeader? FindColumnHeader(DependencyObject? element)
+    {
+        while (element is not null)
+        {
+            if (element is GridViewColumnHeader header)
+                return header;
+
+            element = VisualTreeHelper.GetParent(element);
+        }
+
+        return null;
     }
 
     private void ExtensionLabel_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)

@@ -30,16 +30,12 @@ public class CompressFileItem(string filePath) : FileItemBase(filePath)
 
         string? nextOutputExtension = detected.Format switch
         {
-            RomFormat.Rvz when detected.OutputExtension.Equals("gcm", StringComparison.OrdinalIgnoreCase) => OutputExtension.ToLowerInvariant() switch
-            {
-                "gcm" => "gcz",
-                _ => "gcm"
-            },
             RomFormat.Rvz => OutputExtension.ToLowerInvariant() switch
             {
-                "wbfs" => "iso",
+                "gcm" => "iso",
                 "iso" => "gcz",
-                _ => "wbfs"
+                "gcz" => "wbfs",
+                _ => "gcm"
             },
             RomFormat.Wbfs => OutputExtension.ToLowerInvariant() switch
             {
