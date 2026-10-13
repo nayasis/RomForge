@@ -44,9 +44,17 @@ public class DirectoryPatchSourceResolver(Action<string, LogLevel> log)
             }
         }
 
-        string? discoveredSourcePath = Path.GetExtension(patchPath).Equals(".dcp", StringComparison.OrdinalIgnoreCase)
-            ? FindDcpSource(candidateDirectory)
-            : await FindCompatibleSourceAsync(candidateDirectory, patchPath, ct);
+        string? discoveredSourcePath = null;
+
+        foreach (string searchDirectory in EnumerateSourceDirectories(candidateDirectory))
+        {
+            discoveredSourcePath = Path.GetExtension(patchPath).Equals(".dcp", StringComparison.OrdinalIgnoreCase)
+                ? FindDcpSource(searchDirectory)
+                : await FindCompatibleSourceAsync(searchDirectory, patchPath, ct);
+
+            if (discoveredSourcePath is not null)
+                break;
+        }
 
         if (discoveredSourcePath is null)
             return null;
@@ -55,6 +63,26 @@ public class DirectoryPatchSourceResolver(Action<string, LogLevel> log)
             UpdatePatchLog(patchLogPath, discoveredSourcePath);
 
         return new DirectoryPatchSource(discoveredSourcePath, location.ExistingPackageRoot, IsGdiTrack(discoveredSourcePath));
+    }
+
+    public async Task<bool> HasCompatibleSourceAsync(string directoryPath, string patchPath, CancellationToken ct)
+    {
+        if (File.Exists(directoryPath))
+            return (await ProbeCandidateAsync(directoryPath, patchPath, ct)).IsMatch;
+
+        var location = ResolveLocation(directoryPath);
+
+        foreach (string searchDirectory in EnumerateSourceDirectories(location.SourceDirectory))
+        {
+            bool matched = Path.GetExtension(patchPath).Equals(".dcp", StringComparison.OrdinalIgnoreCase)
+                ? FindDcpSource(searchDirectory) is not null
+                : await FindCompatibleSourceAsync(searchDirectory, patchPath, ct) is not null;
+
+            if (matched)
+                return true;
+        }
+
+        return false;
     }
 
     public static DirectoryPatchLocation ResolveLocation(string directoryPath)
@@ -84,6 +112,31 @@ public class DirectoryPatchSourceResolver(Action<string, LogLevel> log)
 
     private static string? FindDcpSource(string candidateDirectory) =>
         Directory.EnumerateFiles(candidateDirectory, "*.gdi", SearchOption.TopDirectoryOnly).FirstOrDefault();
+
+    public static IEnumerable<string> EnumerateSourceDirectories(string rootDirectory)
+    {
+        yield return rootDirectory;
+
+        if (Directory.EnumerateFiles(rootDirectory, "*", SearchOption.TopDirectoryOnly).Any())
+            yield break;
+
+        var queue = new Queue<(string Path, int Depth)>();
+
+        foreach (string childDirectory in Directory.EnumerateDirectories(rootDirectory, "*", SearchOption.TopDirectoryOnly))
+            queue.Enqueue((childDirectory, 1));
+
+        while (queue.Count > 0)
+        {
+            var (directoryPath, depth) = queue.Dequeue();
+            yield return directoryPath;
+
+            if (depth >= 3)
+                continue;
+
+            foreach (string childDirectory in Directory.EnumerateDirectories(directoryPath, "*", SearchOption.TopDirectoryOnly))
+                queue.Enqueue((childDirectory, depth + 1));
+        }
+    }
 
     private static bool IsGdiTrack(string sourcePath)
     {
@@ -131,36 +184,136 @@ public class DirectoryPatchSourceResolver(Action<string, LogLevel> log)
         {
             ct.ThrowIfCancellationRequested();
 
-            string temporaryOutputPath = Path.GetTempFileName();
-            using var probeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            probeCts.CancelAfter(SourceProbeDuration);
+            var probe = await ProbeCandidateAsync(candidatePath, patchPath, ct);
 
-            try
+            if (probe.IsMatch)
             {
-                File.Delete(temporaryOutputPath);
-                await UniversalPatcher.ApplyPatchAsync(candidatePath, patchPath, temporaryOutputPath, null, probeCts.Token);
-                log($"패치 원본 자동 선택: {Path.GetFileName(candidatePath)}", LogLevel.Ok);
+                string suffix = probe.UsedArchiveContents ? " (압축 내부 검증)" : probe.CompletedQuickly ? string.Empty : " (빠른 검증)";
+                log($"패치 원본 자동 선택: {Path.GetFileName(candidatePath)}{suffix}", LogLevel.Ok);
                 return candidatePath;
-            }
-            catch (OperationCanceledException)
-            {
-                if (ct.IsCancellationRequested)
-                    throw;
-
-                log($"패치 원본 자동 선택: {Path.GetFileName(candidatePath)} (빠른 검증)", LogLevel.Ok);
-                return candidatePath;
-            }
-            catch
-            {
-            }
-            finally
-            {
-                if (File.Exists(temporaryOutputPath))
-                    File.Delete(temporaryOutputPath);
             }
         }
 
+        if (candidates.Count == 1
+            && IsCompressedSource(candidates[0])
+            && await PatchSourceValidation.SupportsDirectCompressedSourceAsync(patchPath, ct))
+        {
+            log($"압축 원본 자동 선택: {Path.GetFileName(candidates[0])} (압축 해제 후 검증)", LogLevel.Ok);
+            return candidates[0];
+        }
+
         return null;
+    }
+
+    private static bool IsCompressedSource(string path) =>
+        Path.GetExtension(path).Equals(".chd", StringComparison.OrdinalIgnoreCase)
+        || Path.GetExtension(path).Equals(".rvz", StringComparison.OrdinalIgnoreCase);
+
+    private async Task<(bool IsMatch, bool CompletedQuickly, bool UsedArchiveContents)> ProbeCandidateAsync(string candidatePath, string patchPath, CancellationToken ct)
+    {
+        string temporaryOutputPath = Path.GetTempFileName();
+        using var probeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        probeCts.CancelAfter(SourceProbeDuration);
+
+        try
+        {
+            File.Delete(temporaryOutputPath);
+            await UniversalPatcher.ApplyPatchAsync(candidatePath, patchPath, temporaryOutputPath, null, probeCts.Token);
+            return (true, true, false);
+        }
+        catch (OperationCanceledException)
+        {
+            if (ct.IsCancellationRequested)
+                throw;
+
+            return (true, false, false);
+        }
+        catch
+        {
+            if (SourceArchiveExtractor.IsArchivePath(candidatePath)
+                && await IsCompatibleArchiveSourceAsync(candidatePath, patchPath, ct))
+            {
+                return (true, true, true);
+            }
+
+            return (false, false, false);
+        }
+        finally
+        {
+            if (File.Exists(temporaryOutputPath))
+                File.Delete(temporaryOutputPath);
+        }
+    }
+
+    private async Task<bool> IsCompatibleArchiveSourceAsync(string archivePath, string patchPath, CancellationToken ct)
+    {
+        string workDirectory = Path.Combine(Path.GetTempPath(), "RomForge", "source-probe", Guid.NewGuid().ToString("N"));
+
+        try
+        {
+            Directory.CreateDirectory(workDirectory);
+
+            var extraction = await SourceArchiveExtractor.AnalyzeAndExtractAsync(
+                archivePath,
+                workDirectory,
+                new Progress<ProgressInfo>(),
+                ct);
+
+            var sourcePaths = new List<string>();
+
+            if (extraction.NeedsSelection)
+            {
+                foreach (var candidate in extraction.Candidates)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    sourcePaths.Add(await SourceArchiveExtractor.ExtractCandidateAsync(
+                        archivePath,
+                        workDirectory,
+                        candidate.EntryKey,
+                        new Progress<ProgressInfo>(),
+                        ct));
+                }
+            }
+            else if (extraction.ResolvedPath is not null)
+            {
+                sourcePaths.Add(extraction.ResolvedPath);
+            }
+
+            foreach (string sourcePath in sourcePaths)
+            {
+                string temporaryOutputPath = Path.Combine(workDirectory, Guid.NewGuid().ToString("N"));
+                using var probeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                probeCts.CancelAfter(SourceProbeDuration);
+
+                try
+                {
+                    await UniversalPatcher.ApplyPatchAsync(sourcePath, patchPath, temporaryOutputPath, null, probeCts.Token);
+                    return true;
+                }
+                catch (OperationCanceledException)
+                {
+                    if (ct.IsCancellationRequested)
+                        throw;
+
+                    return true;
+                }
+                catch
+                {
+                }
+                finally
+                {
+                    if (File.Exists(temporaryOutputPath))
+                        File.Delete(temporaryOutputPath);
+                }
+            }
+
+            return false;
+        }
+        finally
+        {
+            if (Directory.Exists(workDirectory))
+                Directory.Delete(workDirectory, true);
+        }
     }
 
     public static void UpdatePatchLog(string patchLogPath, string sourcePath)

@@ -163,6 +163,12 @@
                                     <DropShadowEffect BlurRadius="4" ShadowDepth="0" Color="#FFCE73" Opacity="0.4"/>
                                 </TextBlock.Effect></TextBlock>
                         </Border>
+                        <Border Background="#1A4D56B2" BorderBrush="#4D4D56B2" BorderThickness="1" CornerRadius="6" Padding="8,3" Margin="3,0">
+                            <TextBlock Text="ZIP / 7Z" Foreground="#8FA3FF" FontWeight="Bold" FontSize="11" VerticalAlignment="Center">
+                                <TextBlock.Effect>
+                                    <DropShadowEffect BlurRadius="4" ShadowDepth="0" Color="#8FA3FF" Opacity="0.4"/>
+                                </TextBlock.Effect></TextBlock>
+                        </Border>
                     </ItemsControl.Items>
                 </ItemsControl>
             </StackPanel>

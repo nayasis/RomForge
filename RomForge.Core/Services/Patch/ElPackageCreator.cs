@@ -8,6 +8,8 @@ using System.Text.RegularExpressions;
 
 namespace RomForge.Core.Services.Patch;
 
+public sealed record PackageResultTarget(string TargetPath, string? ObsoletePath = null);
+
 public class ElPackageCreator(Action<string, LogLevel> log)
 {
     public static HashSet<string> CaptureOutputEntries(string outputDir) =>
@@ -78,7 +80,7 @@ public class ElPackageCreator(Action<string, LogLevel> log)
             .Distinct(StringComparer.OrdinalIgnoreCase)];
     }
 
-    public string Create(string sourcePath, IEnumerable<string> sourcePaths, string outputDir, IEnumerable<string> outputEntries)
+    public string Create(string sourcePath, IEnumerable<string> sourcePaths, string outputDir, IEnumerable<string> outputEntries, string? packageRoot = null)
     {
         var originalPaths = sourcePaths
             .Where(File.Exists)
@@ -110,9 +112,11 @@ public class ElPackageCreator(Action<string, LogLevel> log)
             .Select(Path.GetFullPath)
             .Any(path => !originalPathSet.Contains(path) && !preservedM3uPaths.Contains(path));
         string sourceName = Path.GetFileNameWithoutExtension(sourcePath);
-        string resultDir = hasUnrelatedFiles
-            ? Utils.GetUniqueFolderPath(Path.Combine(sourceDir, string.IsNullOrWhiteSpace(sourceName) ? "patched" : sourceName))
-            : sourceDir;
+        string resultDir = string.IsNullOrWhiteSpace(packageRoot)
+            ? hasUnrelatedFiles
+                ? Utils.GetUniqueFolderPath(Path.Combine(sourceDir, string.IsNullOrWhiteSpace(sourceName) ? "patched" : sourceName))
+                : sourceDir
+            : Path.GetFullPath(packageRoot);
         string sourceBackupDir = Path.Combine(resultDir, "_EL_CONFIG", "src");
 
         Directory.CreateDirectory(resultDir);
@@ -166,6 +170,14 @@ public class ElPackageCreator(Action<string, LogLevel> log)
                 Path.GetFileName(sourcePath)
             ], Encoding.UTF8);
 
+            if (!string.Equals(sourceDir, resultDir, StringComparison.OrdinalIgnoreCase)
+                && Directory.Exists(sourceDir)
+                && !Directory.EnumerateFileSystemEntries(sourceDir).Any())
+            {
+                Directory.Delete(sourceDir);
+                log($"EL 빈 원본 폴더 정리: {sourceDir}", LogLevel.Ok);
+            }
+
             log($"EL 패키지 생성 완료: {resultDir}", LogLevel.Ok);
             return resultDir;
         }
@@ -200,7 +212,7 @@ public class ElPackageCreator(Action<string, LogLevel> log)
         }
     }
 
-    public void InstallPackageResult(string packageRoot, IEnumerable<string> sourcePaths, string outputDir, IEnumerable<string> outputEntries, string? obsoleteResultStem = null)
+    public void InstallPackageResult(string packageRoot, IEnumerable<string> sourcePaths, string outputDir, IEnumerable<string> outputEntries, string? obsoleteResultStem = null, IReadOnlyDictionary<string, PackageResultTarget>? targetOverrides = null)
     {
         var generatedPaths = outputEntries
             .Where(path => File.Exists(path) || Directory.Exists(path))
@@ -213,7 +225,9 @@ public class ElPackageCreator(Action<string, LogLevel> log)
 
         foreach (var generatedPath in generatedPaths)
         {
-            var resultTarget = ResolveResultTargetPath(packageRoot, generatedPath, sourceFileNames, obsoleteResultStem);
+            var resultTarget = targetOverrides is not null && targetOverrides.TryGetValue(generatedPath, out var overrideTarget)
+                ? overrideTarget
+                : ResolveResultTargetPath(packageRoot, generatedPath, sourceFileNames, obsoleteResultStem);
             string targetPath = resultTarget.TargetPath;
 
             if (File.Exists(generatedPath) && File.Exists(targetPath))
@@ -236,24 +250,65 @@ public class ElPackageCreator(Action<string, LogLevel> log)
         CleanupOutputDirectory(outputDir);
     }
 
-    private static (string TargetPath, string? ObsoletePath) ResolveResultTargetPath(string packageRoot, string generatedPath, IReadOnlySet<string> sourceFileNames, string? obsoleteResultStem)
+    public static IReadOnlyDictionary<string, PackageResultTarget>? CreateMultiDiscTargetOverrides(string packageRoot, IReadOnlyList<IReadOnlyList<string>> outputEntriesByDisc)
+    {
+        var generatedFilesByDisc = outputEntriesByDisc
+            .Select(entries => entries.Where(File.Exists).Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).ToList())
+            .ToList();
+
+        if (generatedFilesByDisc.Any(files => files.Count != 1))
+            return null;
+
+        var existingDiscFiles = Directory.EnumerateFiles(packageRoot, "*", SearchOption.TopDirectoryOnly)
+            .Where(IsDiscResultFile)
+            .OrderBy(path => GetDiscOrder(path).Kind)
+            .ThenBy(path => GetDiscOrder(path).Value)
+            .ThenBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (existingDiscFiles.Count != generatedFilesByDisc.Count)
+            return null;
+
+        var targets = new Dictionary<string, PackageResultTarget>(StringComparer.OrdinalIgnoreCase);
+
+        for (int index = 0; index < generatedFilesByDisc.Count; index++)
+        {
+            string generatedPath = generatedFilesByDisc[index][0];
+            string existingPath = existingDiscFiles[index];
+            string targetPath = Path.ChangeExtension(existingPath, Path.GetExtension(generatedPath));
+            string? obsoletePath = string.Equals(existingPath, targetPath, StringComparison.OrdinalIgnoreCase) ? null : existingPath;
+
+            targets[generatedPath] = new PackageResultTarget(targetPath, obsoletePath);
+        }
+
+        return targets;
+    }
+
+    private static PackageResultTarget ResolveResultTargetPath(string packageRoot, string generatedPath, IReadOnlySet<string> sourceFileNames, string? obsoleteResultStem)
     {
         string generatedFileName = Path.GetFileName(generatedPath);
         string directTargetPath = Path.Combine(packageRoot, generatedFileName);
 
         if (File.Exists(directTargetPath))
-            return (directTargetPath, null);
+            return new PackageResultTarget(directTargetPath);
 
         if (File.Exists(generatedPath))
         {
             string outputExtension = Path.GetExtension(generatedPath);
+
+            var sameExtensionTargets = Directory.EnumerateFiles(packageRoot)
+                .Where(path => string.Equals(Path.GetExtension(path), outputExtension, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (sameExtensionTargets.Count == 1)
+                return new PackageResultTarget(sameExtensionTargets[0]);
 
             if (!string.IsNullOrWhiteSpace(obsoleteResultStem))
             {
                 string obsoletePath = Path.Combine(packageRoot, obsoleteResultStem + outputExtension);
 
                 if (File.Exists(obsoletePath))
-                    return (directTargetPath, obsoletePath);
+                    return new PackageResultTarget(directTargetPath, obsoletePath);
             }
 
             var similarTargets = Directory.EnumerateFiles(packageRoot)
@@ -268,8 +323,8 @@ public class ElPackageCreator(Action<string, LogLevel> log)
                 string similarTarget = similarTargets[0];
 
                 return string.Equals(Path.GetExtension(similarTarget), outputExtension, StringComparison.OrdinalIgnoreCase)
-                    ? (similarTarget, null)
-                    : (directTargetPath, similarTarget);
+                    ? new PackageResultTarget(similarTarget)
+                    : new PackageResultTarget(directTargetPath, similarTarget);
             }
         }
 
@@ -281,8 +336,26 @@ public class ElPackageCreator(Action<string, LogLevel> log)
             && File.Exists(Path.Combine(packageRoot, fileName)));
 
         return matchingSourceFileName is null
-            ? (directTargetPath, null)
-            : (Path.Combine(packageRoot, matchingSourceFileName), null);
+            ? new PackageResultTarget(directTargetPath)
+            : new PackageResultTarget(Path.Combine(packageRoot, matchingSourceFileName));
+    }
+
+    private static bool IsDiscResultFile(string path) =>
+        !Path.GetExtension(path).Equals(".m3u", StringComparison.OrdinalIgnoreCase)
+        && Regex.IsMatch(Path.GetFileNameWithoutExtension(path), @"\b(?:disc|disk)\s*(?:\d+|[a-z])\b", RegexOptions.IgnoreCase);
+
+    private static (int Kind, int Value) GetDiscOrder(string path)
+    {
+        var match = Regex.Match(Path.GetFileNameWithoutExtension(path), @"\b(?:disc|disk)\s*(\d+|[a-z])\b", RegexOptions.IgnoreCase);
+
+        if (!match.Success)
+            return (2, int.MaxValue);
+
+        string value = match.Groups[1].Value;
+
+        return int.TryParse(value, out int number)
+            ? (0, number)
+            : (1, char.ToUpperInvariant(value[0]) - 'A');
     }
 
     private static string TrimUniqueSuffix(string fileStem)
@@ -312,7 +385,10 @@ public class ElPackageCreator(Action<string, LogLevel> log)
     }
 
     private static string NormalizeGameName(string fileStem) =>
-        Regex.Replace(Regex.Replace(fileStem, @"\([^)]*\)|\[[^]]*\]", string.Empty), @"\s+", " ").Trim();
+        Regex.Replace(
+            Regex.Replace(fileStem, @"\([^)]*\)|\[[^]]*\]", string.Empty),
+            @"[^\p{L}\p{N}]+",
+            " ").Trim();
 
     private static bool HasSimilarSize(long first, long second) =>
         Math.Abs(first - second) <= Math.Max(1024 * 1024, Math.Max(first, second) / 5);

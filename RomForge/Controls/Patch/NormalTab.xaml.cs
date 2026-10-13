@@ -17,8 +17,8 @@ public partial class NormalTab : UserControl
 
     private static class PatchExtensions
     {
-        public static readonly string[] AllowedExtensions = [".ips", ".bps", ".ups", ".ppf", ".aps", ".xdelta", ".dcp"];
-        public static string FileFilter => $"패치 파일|{string.Join(";", AllowedExtensions.Select(ext => "*" + ext))}|모든 파일|*.*";
+        public static readonly string[] AllowedExtensions = [".ips", ".ips32", ".bps", ".ups", ".ppf", ".aps", ".xdelta", ".xdelta3", ".dcp", ".zip", ".7z"];
+        public static string FileFilter => $"패치 파일 또는 압축파일|{string.Join(";", AllowedExtensions.Select(ext => "*" + ext))}|모든 파일|*.*";
     }
 
     public NormalTab()
@@ -202,6 +202,18 @@ public partial class NormalTab : UserControl
     private void NormalSourceDrop_RightClick(object sender, MouseButtonEventArgs e)
     {
         e.Handled = true;
+
+        if (Clipboard.ContainsText())
+        {
+            string clipboardPath = Clipboard.GetText().Trim().Trim('"');
+
+            if (File.Exists(clipboardPath) || Directory.Exists(clipboardPath))
+            {
+                ViewModel.PatchVM.NormalVM.SourcePath = clipboardPath;
+                return;
+            }
+        }
+
         SelectSourceDirectory();
     }
 
@@ -232,7 +244,7 @@ public partial class NormalTab : UserControl
     {
         if (e.Data.GetData(DataFormats.FileDrop) is string[] files && files.Length > 0)
         {
-            if (Directory.Exists(files[0]))
+            if (files.Length == 1 || Directory.Exists(files[0]))
             {
                 ViewModel.PatchVM.NormalVM.SourcePath = files[0];
                 return;
