@@ -6,6 +6,11 @@
 
 https://sinjunyoung.github.io/RomForge/
 
+## CLI
+
+`RomForge.exe --help` 또는 `RomForge.exe tools --json`으로 CLI 기능을 확인할 수 있습니다.
+영문 도움말과 작업별 JSON 예제: [CLI manual](docs/cli.md).
+
 ## License
 
 This project is licensed under the GNU General Public License v2.0 or later (GPL-2.0-or-later). See the `LICENSE` file for the full license text.
