@@ -160,18 +160,21 @@ public class NormalPatchMainViewModel : ToolTabViewModel, IPatchViewModel
         Application.Current?.Dispatcher?.Invoke(() => LogEntries.Add(new LogEntry { Message = message, Level = level }));
     }
 
+    public string? OutputDirectory { get; private set; }
+
     public async Task RunAsync()
     {
         if (SourcePath is null || PatchPath is null)
             return;
 
         _runCts = new CancellationTokenSource();
+        string outputFolderName = "output_" + DateTime.Now.ToString("HHmmss");
 
         var ct = _runCts.Token;
         bool sourceIsDirectory = Directory.Exists(SourcePath);
         bool patchIsDirectory = Directory.Exists(PatchPath);
         string sourceRootDirectory = sourceIsDirectory ? SourcePath : Path.GetDirectoryName(SourcePath)!;
-        string outputDir = Path.Combine(sourceRootDirectory, "output");
+        string outputDir = Path.Combine(sourceRootDirectory, outputFolderName);
         string? extractDir = null;
         string? outputPath = null;
         string completionDir = outputDir;
@@ -208,7 +211,7 @@ public class NormalPatchMainViewModel : ToolTabViewModel, IPatchViewModel
                     }
                     else
                     {
-                        if (await TryRunSingleDiscPatchSetAsync(SourcePath, patchArchiveExtraction.WorkDirectory, ct))
+                        if (await TryRunSingleDiscPatchSetAsync(SourcePath, patchArchiveExtraction.WorkDirectory, outputFolderName, ct))
                             return;
 
                         var patchMode = await ResolvePatchDirectoryModeAsync(SourcePath, patchArchiveExtraction.WorkDirectory, ct);
@@ -216,7 +219,7 @@ public class NormalPatchMainViewModel : ToolTabViewModel, IPatchViewModel
                         if (patchMode.IsMultiDisc)
                         {
                             Log("압축파일 안의 여러 패치를 멀티 디스크 패치로 처리합니다.", LogLevel.Highlight);
-                            await RunMultiDiscAsync(SourcePath, patchArchiveExtraction.WorkDirectory, ct);
+                            await RunMultiDiscAsync(SourcePath, patchArchiveExtraction.WorkDirectory, outputFolderName, ct);
                             return;
                         }
 
@@ -246,14 +249,14 @@ public class NormalPatchMainViewModel : ToolTabViewModel, IPatchViewModel
                 }
                 else
                 {
-                    if (await TryRunSingleDiscPatchSetAsync(SourcePath, actualPatchPath, ct))
+                    if (await TryRunSingleDiscPatchSetAsync(SourcePath, actualPatchPath, outputFolderName, ct))
                         return;
 
                     var patchMode = await ResolvePatchDirectoryModeAsync(SourcePath, actualPatchPath, ct);
 
                     if (patchMode.IsMultiDisc)
                     {
-                        await RunMultiDiscAsync(SourcePath, actualPatchPath, ct);
+                        await RunMultiDiscAsync(SourcePath, actualPatchPath, outputFolderName, ct);
                         return;
                     }
 
@@ -293,11 +296,12 @@ public class NormalPatchMainViewModel : ToolTabViewModel, IPatchViewModel
                 string sourceDirectory = Path.Combine(existingElPackageRoot, "_EL_CONFIG", "src");
                 existingPackageSourcePaths = [.. Directory.EnumerateFiles(sourceDirectory)
                     .Where(path => !string.Equals(Path.GetFileName(path), "patch.log", StringComparison.OrdinalIgnoreCase))];
-                outputDir = Path.Combine(existingElPackageRoot, "output");
+                outputDir = Path.Combine(existingElPackageRoot, outputFolderName);
                 completionDir = outputDir;
             }
 
             Directory.CreateDirectory(outputDir);
+            OutputDirectory = outputDir;
 
             string actualSourcePath = selectedSourcePath;
 
@@ -430,6 +434,7 @@ public class NormalPatchMainViewModel : ToolTabViewModel, IPatchViewModel
 
             CleanupExtractDirectory(extractDir);
             extractDir = null;
+            OutputDirectory = completionDir;
 
             stopwatch.Stop();
 
@@ -556,12 +561,13 @@ public class NormalPatchMainViewModel : ToolTabViewModel, IPatchViewModel
         return null;
     }
 
-    private async Task RunMultiDiscAsync(string sourceInputDirectory, string patchDirectory, CancellationToken ct)
+    private async Task RunMultiDiscAsync(string sourceInputDirectory, string patchDirectory, string outputFolderName, CancellationToken ct)
     {
         var location = DirectoryPatchSourceResolver.ResolveLocation(sourceInputDirectory);
         string? selectedPackageRoot = GetSelectedPackageRoot(sourceInputDirectory, location);
-        string outputDir = Path.Combine(location.ExistingPackageRoot ?? selectedPackageRoot ?? sourceInputDirectory, "output");
+        string outputDir = Path.Combine(location.ExistingPackageRoot ?? selectedPackageRoot ?? sourceInputDirectory, outputFolderName);
         string workDirectory = Path.Combine(outputDir, "_multi_patch");
+        OutputDirectory = outputDir;
         string completionDirectory = location.ExistingPackageRoot ?? selectedPackageRoot ?? sourceInputDirectory;
         var stopwatch = Stopwatch.StartNew();
 
@@ -647,6 +653,7 @@ public class NormalPatchMainViewModel : ToolTabViewModel, IPatchViewModel
             Log($"멀티 디스크 패치 완료: {pairs.Count}개 디스크 ({stopwatch.Elapsed:mm\\:ss})", LogLevel.Ok);
             ProgressLabel = string.Empty;
 
+            OutputDirectory = CreateElPackageWhenCompleted ? completionDirectory : outputDir;
             if (AppConfig.Instance.Patch.OpenOutputFolderWhenCompleted)
                 completionDirectory.OpenFolder();
             else
@@ -770,13 +777,14 @@ public class NormalPatchMainViewModel : ToolTabViewModel, IPatchViewModel
         Log($"멀티 디스크 패치 완료: {discPatchSets.Count}개 디스크 ({stopwatch.Elapsed:mm\\:ss})", LogLevel.Ok);
         ProgressLabel = string.Empty;
 
+        OutputDirectory = CreateElPackageWhenCompleted ? completionDirectory : outputDir;
         if (AppConfig.Instance.Patch.OpenOutputFolderWhenCompleted)
             completionDirectory.OpenFolder();
         else
             PatchCompleted?.Invoke(this, EventArgs.Empty);
     }
 
-    private async Task<bool> TryRunSingleDiscPatchSetAsync(string sourceInputDirectory, string patchDirectory, CancellationToken ct)
+    private async Task<bool> TryRunSingleDiscPatchSetAsync(string sourceInputDirectory, string patchDirectory, string outputFolderName, CancellationToken ct)
     {
         var location = DirectoryPatchSourceResolver.ResolveLocation(sourceInputDirectory);
         string? sourceDirectory = MultiDiscPatchResolver.FindSingleCueSourceDirectory(location.SourceDirectory);
@@ -785,8 +793,9 @@ public class NormalPatchMainViewModel : ToolTabViewModel, IPatchViewModel
             return false;
 
         string? selectedPackageRoot = GetSelectedPackageRoot(sourceInputDirectory, location);
-        string outputDir = Path.Combine(location.ExistingPackageRoot ?? selectedPackageRoot ?? sourceDirectory, "output");
+        string outputDir = Path.Combine(location.ExistingPackageRoot ?? selectedPackageRoot ?? sourceDirectory, outputFolderName);
         string workDirectory = Path.Combine(outputDir, "_single_disc_patch");
+        OutputDirectory = outputDir;
         var resolver = new MultiDiscPatchResolver(Log);
         IReadOnlyList<MultiDiscPatchPair> pairs = [];
 
@@ -908,6 +917,7 @@ public class NormalPatchMainViewModel : ToolTabViewModel, IPatchViewModel
             Log($"단일 디스크 다중 파일 패치 완료: {patchSet.Pairs.Count}개 파일 ({stopwatch.Elapsed:mm\\:ss})", LogLevel.Ok);
             ProgressLabel = string.Empty;
 
+            OutputDirectory = CreateElPackageWhenCompleted ? completionDirectory : outputDir;
             if (AppConfig.Instance.Patch.OpenOutputFolderWhenCompleted)
                 completionDirectory.OpenFolder();
             else
@@ -968,7 +978,7 @@ public class NormalPatchMainViewModel : ToolTabViewModel, IPatchViewModel
     {
         const string message = "패치에 사용할 원본 파일을 찾을 수 없습니다. _EL_CONFIG/src의 patch.log 또는 원본 파일을 확인해주세요.";
         Log(message, LogLevel.Error);
-        MessageBox.Show(message, "원본 파일 검색 실패", MessageBoxButton.OK, MessageBoxImage.Warning);
+        NSW.WPF.UI.MessageBoxHelper.ShowWarning(message);
     }
 
     private void CleanupFailedOutputDirectory(string outputDir)

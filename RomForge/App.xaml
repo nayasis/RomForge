@@ -5,7 +5,7 @@
              xmlns:converters="clr-namespace:RomForge.Converters"
              xmlns:wpfconverters="clr-namespace:NSW.WPF.Converters;assembly=NSW.WPF"
              xmlns:cmnconverters="clr-namespace:Common.WPF.Converters;assembly=Common.WPF"
-             StartupUri="Views/MainWindow.xaml">
+             >
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>

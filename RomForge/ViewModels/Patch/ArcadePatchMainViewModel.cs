@@ -34,6 +34,9 @@ public class ArcadePatchMainViewModel : ToolTabViewModel, IPatchViewModel
     private CancellationTokenSource? _analyzeCts;
     private CancellationTokenSource? _matchCts;
     private CancellationTokenSource? _runCts;
+    private Task _analysisTask = Task.CompletedTask;
+
+    public Task WaitForAnalysisAsync() => _analysisTask;
     private PatchPackage? _selectedPatchPackage;
 
     public PatchPackage? SelectedPatchPackage
@@ -58,7 +61,7 @@ public class ArcadePatchMainViewModel : ToolTabViewModel, IPatchViewModel
             OnPropertyChanged(nameof(SourceLabel));
 
             if (_sourcePath is not null)
-                _ = AnalyzeAsync();
+                _analysisTask = AnalyzeAsync();
         }
     }
 
@@ -73,7 +76,7 @@ public class ArcadePatchMainViewModel : ToolTabViewModel, IPatchViewModel
             OnPropertyChanged(nameof(PatchLabel));
 
             if (value is not null)
-                _ = AnalyzeAsync();
+                _analysisTask = AnalyzeAsync();
         }
     }
 
@@ -125,6 +128,8 @@ public class ArcadePatchMainViewModel : ToolTabViewModel, IPatchViewModel
             LogEntries.Add(new LogEntry { Message = message, Level = level }));
     }
 
+    public string? OutputDirectory { get; private set; }
+
     public async Task RunAsync()
     {
         var matched = MatchItems.Where(x => x.IsMatched).ToList();
@@ -141,9 +146,10 @@ public class ArcadePatchMainViewModel : ToolTabViewModel, IPatchViewModel
         _runCts = new CancellationTokenSource();
         var ct = _runCts.Token;
 
-        string outputDir = Path.Combine(Path.GetDirectoryName(SourcePath)!, "output");
+        string outputDir = Path.Combine(Path.GetDirectoryName(SourcePath)!, "output_" + DateTime.Now.ToString("HHmmss"));
         string outputZipPath = Path.Combine(outputDir, Path.ChangeExtension(Path.GetFileName(SourcePath), ".zip"));
         string completionDir = outputDir;
+        OutputDirectory = outputDir;
 
         Log($"패치 시작: {Path.GetFileName(SourcePath)}", LogLevel.Highlight);
 
@@ -179,6 +185,7 @@ public class ArcadePatchMainViewModel : ToolTabViewModel, IPatchViewModel
                 elPackageCreator.CleanupOutputDirectory(outputDir);
             }
 
+            OutputDirectory = completionDir;
             Log($"패치 완료: {SourcePath}", LogLevel.Ok);
 
             if (AppConfig.Instance.Patch.OpenOutputFolderWhenCompleted)

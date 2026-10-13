@@ -123,7 +123,8 @@ public class DirectoryPatchSourceResolver(Action<string, LogLevel> log)
         var queue = new Queue<(string Path, int Depth)>();
 
         foreach (string childDirectory in Directory.EnumerateDirectories(rootDirectory, "*", SearchOption.TopDirectoryOnly))
-            queue.Enqueue((childDirectory, 1));
+            if (!IsOutputDirectory(childDirectory))
+                queue.Enqueue((childDirectory, 1));
 
         while (queue.Count > 0)
         {
@@ -134,8 +135,17 @@ public class DirectoryPatchSourceResolver(Action<string, LogLevel> log)
                 continue;
 
             foreach (string childDirectory in Directory.EnumerateDirectories(directoryPath, "*", SearchOption.TopDirectoryOnly))
-                queue.Enqueue((childDirectory, depth + 1));
+                if (!IsOutputDirectory(childDirectory))
+                    queue.Enqueue((childDirectory, depth + 1));
         }
+    }
+
+    private static bool IsOutputDirectory(string path)
+    {
+        string name = Path.GetFileName(path);
+        return name.Equals("output", StringComparison.OrdinalIgnoreCase)
+            || name.Length == 13 && name.StartsWith("output_", StringComparison.OrdinalIgnoreCase)
+                && name[7..].All(char.IsDigit);
     }
 
     private static bool IsGdiTrack(string sourcePath)
