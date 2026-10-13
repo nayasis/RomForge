@@ -3,6 +3,7 @@ using RomForge.ViewModels;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 
 namespace RomForge.Controls.Patch;
 
@@ -27,6 +28,38 @@ public partial class ArcadeTab : UserControl
             return;
 
         ViewModel.PatchVM.ArcadeVM.PatchPath = files[0];
+    }
+
+    private void ArcadeSourceDrop_RightClick(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+
+        if (TryGetClipboardPath(out string? path))
+            ViewModel.PatchVM.ArcadeVM.SourcePath = path;
+    }
+
+    private void ArcadePatchDrop_RightClick(object sender, MouseButtonEventArgs e)
+    {
+        e.Handled = true;
+
+        if (TryGetClipboardPath(out string? path))
+            ViewModel.PatchVM.ArcadeVM.PatchPath = path;
+    }
+
+    private static bool TryGetClipboardPath(out string? path)
+    {
+        path = null;
+
+        if (!Clipboard.ContainsText())
+            return false;
+
+        string clipboardPath = Clipboard.GetText().Trim().Trim('"');
+
+        if (!File.Exists(clipboardPath) && !Directory.Exists(clipboardPath))
+            return false;
+
+        path = clipboardPath;
+        return true;
     }
 
     private void MatchCard_DragOver(object sender, DragEventArgs e)

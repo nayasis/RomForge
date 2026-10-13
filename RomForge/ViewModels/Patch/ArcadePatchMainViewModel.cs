@@ -5,9 +5,9 @@ using RomForge.Core;
 using RomForge.Core.Models;
 using RomForge.Core.Models.Patch;
 using RomForge.Core.Services.Patch;
+using Patch.Core.Services;
 using System.Collections.ObjectModel;
 using System.IO;
-using System.IO.Compression;
 using System.Text;
 using System.Windows;
 
@@ -15,6 +15,11 @@ namespace RomForge.ViewModels.Patch;
 
 public class ArcadePatchMainViewModel : ToolTabViewModel, IPatchViewModel
 {
+    private static readonly HashSet<string> SupportedPatchExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".ips", ".ips32", ".bps", ".ups", ".ppf", ".aps", ".xdelta", ".xdelta3"
+    };
+
     public ObservableCollection<LogEntry> LogEntries { get; } = [];
 
     public event EventHandler? PatchCompleted;
@@ -48,11 +53,11 @@ public class ArcadePatchMainViewModel : ToolTabViewModel, IPatchViewModel
         get => _sourcePath;
         set
         {
-            _sourcePath = value;
+            _sourcePath = ResolveSourceArchivePath(value);
             OnPropertyChanged();
             OnPropertyChanged(nameof(SourceLabel));
 
-            if (value is not null)
+            if (_sourcePath is not null)
                 _ = AnalyzeAsync();
         }
     }
@@ -109,8 +114,8 @@ public class ArcadePatchMainViewModel : ToolTabViewModel, IPatchViewModel
         }
     }
 
-    public string SourceLabel => Path.GetFileName(SourcePath) ?? "원본 ZIP을 드래그&드롭하세요";
-    public string PatchLabel => Path.GetFileName(PatchPath) ?? "패치(IPS/폴더/ZIP)를 드래그&드롭하세요";
+    public string SourceLabel => Path.GetFileName(SourcePath) ?? "원본 ZIP 또는 7Z를 드래그&드롭하세요";
+    public string PatchLabel => Path.GetFileName(PatchPath) ?? "패치(IPS/폴더/ZIP/7Z)를 드래그&드롭하세요";
     public Visibility HintVisibility => MatchItems.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
     public Visibility MismatchVisibility => MismatchReason is not null ? Visibility.Visible : Visibility.Collapsed;
 
@@ -137,7 +142,7 @@ public class ArcadePatchMainViewModel : ToolTabViewModel, IPatchViewModel
         var ct = _runCts.Token;
 
         string outputDir = Path.Combine(Path.GetDirectoryName(SourcePath)!, "output");
-        string outputZipPath = Path.Combine(outputDir, Path.GetFileName(SourcePath));
+        string outputZipPath = Path.Combine(outputDir, Path.ChangeExtension(Path.GetFileName(SourcePath), ".zip"));
         string completionDir = outputDir;
 
         Log($"패치 시작: {Path.GetFileName(SourcePath)}", LogLevel.Highlight);
@@ -165,7 +170,7 @@ public class ArcadePatchMainViewModel : ToolTabViewModel, IPatchViewModel
 
         try
         {
-            await PatchService.ApplyPatchedZipAsync(SourcePath, outputZipPath, patchesByEntryName, progressReporter, ct);
+            await PatchService.ApplyPatchedArchiveAsync(SourcePath, outputZipPath, patchesByEntryName, progressReporter, ct);
 
             if (AppConfig.Instance.Patch.CreateElPackageWhenCompleted)
             {
@@ -315,6 +320,11 @@ public class ArcadePatchMainViewModel : ToolTabViewModel, IPatchViewModel
 
             OnPropertyChanged(nameof(HasPatchPackages));
             SelectedPatchPackage = AvailablePatchPackages.FirstOrDefault();
+            await MatchItemsRebuildAsync();
+        }
+        catch (Exception ex)
+        {
+            Log($"아케이드 패치 분석 실패: {ex.Message}", LogLevel.Error);
         }
         finally
         {
@@ -378,6 +388,10 @@ public class ArcadePatchMainViewModel : ToolTabViewModel, IPatchViewModel
             UpdateSummary();
             OnPropertyChanged(nameof(HintVisibility));
         }
+        catch (Exception ex)
+        {
+            Log($"아케이드 파일 매칭 실패: {ex.Message}", LogLevel.Error);
+        }
         finally
         {
             if (ReferenceEquals(_matchCts, cts))
@@ -428,6 +442,7 @@ public class ArcadePatchMainViewModel : ToolTabViewModel, IPatchViewModel
         var allowedPatchNames = package?.Entries.Select(e => e.PatchBaseName).ToHashSet(StringComparer.OrdinalIgnoreCase) ?? [];
         var sortedPatches = patchEntries.OrderBy(p => p.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
         var usedPatches = new HashSet<PatchEntry>();
+        var fileNameBuckets = new Dictionary<string, Queue<PatchEntry>>(StringComparer.OrdinalIgnoreCase);
         var extensionBuckets = new Dictionary<string, Queue<PatchEntry>>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var p in sortedPatches)
@@ -438,13 +453,23 @@ public class ArcadePatchMainViewModel : ToolTabViewModel, IPatchViewModel
             if (!eligibleForExtensionMatch)
                 continue;
 
-            if (!extensionBuckets.TryGetValue(p.FileNameWithoutExtension, out var queue))
+            if (!fileNameBuckets.TryGetValue(p.FileNameWithoutExtension, out var fileNameQueue))
             {
-                queue = new Queue<PatchEntry>();
-                extensionBuckets[p.FileNameWithoutExtension] = queue;
+                fileNameQueue = new Queue<PatchEntry>();
+                fileNameBuckets[p.FileNameWithoutExtension] = fileNameQueue;
             }
 
-            queue.Enqueue(p);
+            fileNameQueue.Enqueue(p);
+
+            string extension = Path.GetExtension(p.FileNameWithoutExtension).TrimStart('.');
+
+            if (!extensionBuckets.TryGetValue(extension, out var extensionQueue))
+            {
+                extensionQueue = new Queue<PatchEntry>();
+                extensionBuckets[extension] = extensionQueue;
+            }
+
+            extensionQueue.Enqueue(p);
         }
 
         var datCandidates = new LinkedList<PatchEntry>(sortedPatches);
@@ -471,7 +496,8 @@ public class ArcadePatchMainViewModel : ToolTabViewModel, IPatchViewModel
             else
             {
                 var ext = Path.GetExtension(fileName).TrimStart('.').ToLower();
-                matched = DequeueUnused(extensionBuckets, ext, usedPatches);
+                matched = DequeueUnused(fileNameBuckets, fileName, usedPatches)
+                    ?? DequeueUnused(extensionBuckets, ext, usedPatches);
             }
 
             if (matched is not null)
@@ -507,9 +533,7 @@ public class ArcadePatchMainViewModel : ToolTabViewModel, IPatchViewModel
 
     private static PatchEntry? DequeueUnused(Dictionary<string, Queue<PatchEntry>> buckets, string extension, HashSet<PatchEntry> usedPatches)
     {
-        var key = buckets.Keys.FirstOrDefault(k => k.Contains(extension, StringComparison.OrdinalIgnoreCase));
-
-        if (key is null || !buckets.TryGetValue(key, out var queue))
+        if (!buckets.TryGetValue(extension, out var queue))
             return null;
 
         while (queue.Count > 0)
@@ -525,35 +549,39 @@ public class ArcadePatchMainViewModel : ToolTabViewModel, IPatchViewModel
 
     private static List<(string FileName, string FullPath, string Crc)> GetSourceEntries(string zipPath)
     {
-        using var zip = ZipFile.OpenRead(zipPath);
+        if (!ArchivePatchSourceFactory.IsArchivePath(zipPath))
+            throw new InvalidOperationException($"아케이드 원본은 ZIP 또는 7Z 파일이어야 합니다: {zipPath}");
 
-        return [.. zip.Entries
-            .Where(e => !string.IsNullOrEmpty(e.Name))
-            .Select(e => (e.Name, $"{zipPath}|{e.FullName}", e.Crc32.ToString("x8")))];
+        using var archive = ArchivePatchSourceFactory.Open(zipPath);
+
+        return [.. archive.EntryPaths
+            .Select(path => archive.FindEntry(path) ?? throw new InvalidOperationException($"원본 압축파일 엔트리를 찾을 수 없습니다: {path}"))
+            .Select(entry => (Path.GetFileName(entry.FullPath), $"{zipPath}|{entry.FullPath}", CalculateCrc32(entry)))];
     }
 
     private static List<PatchEntry> GetPatchEntries(string path)
     {
-        if (path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) && File.Exists(path))
+        if (ArchivePatchSourceFactory.IsArchivePath(path) && File.Exists(path))
         {
-            using var zip = ZipFile.OpenRead(path);
+            using var archive = ArchivePatchSourceFactory.Open(path);
 
-            return [.. zip.Entries
-                .Where(e => !string.IsNullOrEmpty(e.Name) && e.Name.EndsWith(".ips", StringComparison.OrdinalIgnoreCase))
+            return [.. archive.EntryPaths
+                .Where(entryPath => SupportedPatchExtensions.Contains(Path.GetExtension(entryPath)))
                 .Select(e => new PatchEntry
                 {
-                    DisplayName = e.Name,
-                    ZipPath = path,
-                    EntryPath = e.FullName
+                    DisplayName = e,
+                    ArchivePath = path,
+                    EntryPath = e
                 })];
         }
 
         if (File.Exists(path))
-            return path.EndsWith(".ips", StringComparison.OrdinalIgnoreCase)
+            return SupportedPatchExtensions.Contains(Path.GetExtension(path))
                 ? [new PatchEntry { DisplayName = Path.GetFileName(path), EntryPath = path }] : [];
 
         if (Directory.Exists(path))
-            return [.. Directory.GetFiles(path, "*.ips", SearchOption.AllDirectories)
+            return [.. Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories)
+                .Where(file => SupportedPatchExtensions.Contains(Path.GetExtension(file)))
                 .Select(f => new PatchEntry { DisplayName = Path.GetFileName(f), EntryPath = f })];
 
         return [];
@@ -561,18 +589,20 @@ public class ArcadePatchMainViewModel : ToolTabViewModel, IPatchViewModel
 
     private static List<(string FileName, string Content)> GetDatFiles(string patchPath)
     {
-        if (patchPath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) && File.Exists(patchPath))
+        if (ArchivePatchSourceFactory.IsArchivePath(patchPath) && File.Exists(patchPath))
         {
-            using var zip = ZipFile.OpenRead(patchPath);
+            using var archive = ArchivePatchSourceFactory.Open(patchPath);
 
-            return [.. zip.Entries
-                .Where(e => e.Name.EndsWith(".dat", StringComparison.OrdinalIgnoreCase))
-                .Select(e =>
+            return [.. archive.EntryPaths
+                .Where(entryPath => entryPath.EndsWith(".dat", StringComparison.OrdinalIgnoreCase))
+                .Select(entryPath =>
                 {
-                    using var stream = e.Open();
+                    var entry = archive.FindEntry(entryPath)
+                        ?? throw new InvalidOperationException($"패치 압축파일 엔트리를 찾을 수 없습니다: {entryPath}");
+                    using var stream = entry.Open();
                     using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
 
-                    return (e.Name, reader.ReadToEnd());
+                    return (entryPath, reader.ReadToEnd());
                 })];
         }
 
@@ -581,5 +611,39 @@ public class ArcadePatchMainViewModel : ToolTabViewModel, IPatchViewModel
                 .Select(f => (Path.GetFileName(f), File.ReadAllText(f, Encoding.UTF8)))];
 
         return [];
+    }
+
+    private static string? ResolveSourceArchivePath(string? path)
+    {
+        if (path is null || !Directory.Exists(path))
+            return path;
+
+        var archives = Directory.EnumerateFiles(path, "*", SearchOption.TopDirectoryOnly)
+            .Where(ArchivePatchSourceFactory.IsArchivePath)
+            .ToList();
+
+        return archives.Count == 1 ? archives[0] : path;
+    }
+
+    private static string CalculateCrc32(IArchivePatchEntry entry)
+    {
+        uint crc = 0xFFFFFFFF;
+        var buffer = new byte[81920];
+
+        using var stream = entry.Open();
+        int read;
+
+        while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            for (int index = 0; index < read; index++)
+            {
+                crc ^= buffer[index];
+
+                for (int bit = 0; bit < 8; bit++)
+                    crc = (crc >> 1) ^ ((crc & 1) * 0xEDB88320);
+            }
+        }
+
+        return (~crc).ToString("x8");
     }
 }

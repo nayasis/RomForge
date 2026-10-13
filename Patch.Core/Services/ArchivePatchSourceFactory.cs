@@ -35,9 +35,23 @@ public static class ArchivePatchSourceFactory
         IArchivePatchSource baseArchive = string.Equals(ext, ".7z", StringComparison.OrdinalIgnoreCase)
             ? new SevenZipArchivePatchSource(archivePath, password)
             : string.Equals(ext, ".zip", StringComparison.OrdinalIgnoreCase)
-                ? new ZipArchivePatchSource(archivePath, password)
+                ? OpenZipArchive(archivePath, password)
                 : throw new NotSupportedException($"지원하지 않는 압축 형식입니다: {ext}");
 
         return scope.Length == 0 ? baseArchive : new ScopedArchivePatchSource(baseArchive, scope);
+    }
+
+    private static IArchivePatchSource OpenZipArchive(string path, string? password)
+    {
+        try
+        {
+            return new ZipArchivePatchSource(path, password);
+        }
+        catch (IndexOutOfRangeException) when (string.IsNullOrEmpty(password))
+        {
+            string firstVolumePath = Path.ChangeExtension(path, ".z01");
+            throw new InvalidOperationException(
+                $"분할 ZIP의 첫 볼륨을 찾을 수 없습니다: {firstVolumePath}. {Path.GetFileName(path)}과 같은 폴더에 .z01, .z02 등의 모든 분할 파일을 둔 뒤 다시 시도하세요.");
+        }
     }
 }
