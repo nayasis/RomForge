@@ -120,8 +120,11 @@ public class CertsMainViewModel : ToolTabViewModel
         SelectedFile = new CertsFileItem(path);
         RomInfo = null;
         AppendLog($"파일 로드됨: {SelectedFile.FileName}");
-        _ = LoadRomInfoAsync(path);
+        _preparationTask = LoadRomInfoAsync(path);
     }
+
+    private Task _preparationTask = Task.CompletedTask;
+    public Task WaitForPreparationAsync() => _preparationTask;
 
     public void ClearFile()
     {

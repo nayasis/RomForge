@@ -260,7 +260,7 @@ public class ZipImageToolMainViewModel : ToolTabViewModel
         }
     }
 
-    private async Task WriteAsync()
+    public async Task WriteAsync()
     {
         if (IsLocked)
         {
@@ -337,7 +337,7 @@ public class ZipImageToolMainViewModel : ToolTabViewModel
             AppendLog("지원하지 않는 파일 형식입니다.(.zip 또는 .img)", LogLevel.Error);
     }
 
-    private async Task ReadAsync()
+    public async Task ReadAsync()
     {
         if (IsLocked)
         {

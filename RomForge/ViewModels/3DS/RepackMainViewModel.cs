@@ -21,6 +21,8 @@ namespace RomForge.ViewModels._3DS;
 public class RepackMainViewModel : ToolTabViewModel
 {
     private CancellationTokenSource _cts = new();
+    private Task _preparationTask = Task.CompletedTask;
+    public Task WaitForPreparationAsync() => _preparationTask;
     private BuildMode? _currentMode;
     private readonly RepackService _service;
     public ObservableCollection<LogEntry> LogEntries { get; } = [];
@@ -89,7 +91,7 @@ public class RepackMainViewModel : ToolTabViewModel
 
             OnPropertyChanged();
             OnPropertyChanged(nameof(InputHintVisibility));
-            _ = RefreshRomInfoAsync();
+            _preparationTask = RefreshRomInfoAsync();
         }
     }
 
@@ -116,7 +118,7 @@ public class RepackMainViewModel : ToolTabViewModel
             AppConfig.Instance.OutputFolders.ThreeDsRepackOutputPath = value;
 
             if (string.IsNullOrEmpty(InputPath))
-                _ = RefreshRomInfoAsync();
+                _preparationTask = RefreshRomInfoAsync();
         }
     }
 
@@ -189,7 +191,7 @@ public class RepackMainViewModel : ToolTabViewModel
         BrowseInputCommand = new RelayCommand(async _ => await BrowseInput());
         BrowseOutputCommand = new RelayCommand(async _ => await BrowseOutput());
 
-        _ = RefreshRomInfoAsync();
+        _preparationTask = RefreshRomInfoAsync();
 
         PropertyChanged += (_, e) =>
         {

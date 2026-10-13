@@ -160,6 +160,7 @@ public class OutputFoldersConfig : ViewModelBase
 
 public class AppConfig : ViewModelBase
 {
+    public static bool PersistChanges { get; set; } = true;
     private static readonly string DefaultFilePath = Path.ChangeExtension(Environment.ProcessPath!, "config.json");
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
@@ -259,5 +260,9 @@ public class AppConfig : ViewModelBase
         OutputFolders.PropertyChanged += AutoSave;
     }
 
-    public void Save() => File.WriteAllText(DefaultFilePath, JsonSerializer.Serialize(this, JsonOptions));
+    public void Save()
+    {
+        if (PersistChanges)
+            File.WriteAllText(DefaultFilePath, JsonSerializer.Serialize(this, JsonOptions));
+    }
 }

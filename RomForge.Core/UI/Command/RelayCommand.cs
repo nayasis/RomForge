@@ -13,6 +13,9 @@ public class RelayCommand(Func<object?, Task> executeAsync, Func<object?, bool>?
     public bool CanExecute(object? parameter) => !_isExecuting && (_canExecute?.Invoke(parameter) ?? true);
 
     public async void Execute(object? parameter)
+        => await ExecuteAsync(parameter);
+
+    public async Task ExecuteAsync(object? parameter)
     {
         if (!CanExecute(parameter))
             return;

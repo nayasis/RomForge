@@ -209,11 +209,14 @@ public class PackingMainViewModel : ToolTabViewModel
         };
     }
 
-    public async void AddPaths(IEnumerable<string> paths)
+    public async void AddPaths(IEnumerable<string> paths) => await AddPathsAsync(paths);
+
+    public async Task AddPathsAsync(IEnumerable<string> paths)
     {
         try
         {
             await AddPathsCoreAsync(paths);
+            await _preparationTask;
         }
         catch (Exception ex)
         {
@@ -270,7 +273,7 @@ public class PackingMainViewModel : ToolTabViewModel
         {
             OnPropertyChanged(nameof(HintVisibility));
             DiscListSorter.SortAndRenumber(FileItems);
-            _ = UpdateImageAsync();
+            _preparationTask = UpdateImageAsync();
             OnPropertyChanged(nameof(HasPresetConfig));
             OnPropertyChanged(nameof(CanEditPopsConfig));
         }
@@ -344,6 +347,9 @@ public class PackingMainViewModel : ToolTabViewModel
         BootLogoBytes = null;
         BootLogoImage = null;
     }
+
+    private Task _preparationTask = Task.CompletedTask;
+    public Task WaitForPreparationAsync() => _preparationTask;
 
     private async Task UpdateImageAsync()
     {
