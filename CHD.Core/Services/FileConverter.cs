@@ -329,6 +329,7 @@ public class FileConverter : IDisposable
     {
         var inputPath = source.PrimaryFile;
         var chdPath = Utils.GetUniqueFilePath(Path.ChangeExtension(inputPath, ".chd"));
+        string? temporaryCuePath = null;
 
         Log($"{Path.GetFileName(inputPath)} 압축 시작", LogLevel.Highlight);
         CurrentOutputPath = chdPath;
@@ -337,7 +338,24 @@ public class FileConverter : IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            bool success = await _chdman.CreateDvdAsync(inputPath, chdPath, _compression, progress, cancellationToken);
+            bool success;
+
+            if (TryDetectRawCdTrackType(inputPath, out var trackType))
+            {
+                temporaryCuePath = Path.Combine(Path.GetDirectoryName(inputPath)!, $".romforge_{Guid.NewGuid():N}.cue");
+                File.WriteAllLines(temporaryCuePath,
+                [
+                    $"FILE \"{Path.GetFileName(inputPath)}\" BINARY",
+                    $"  TRACK 01 {trackType}",
+                    "    INDEX 01 00:00:00"
+                ]);
+                Log($"raw CD ISO 감지: {trackType}", LogLevel.Info);
+                success = await _chdman.CreateCdAsync(temporaryCuePath, chdPath, progress, cancellationToken);
+            }
+            else
+            {
+                success = await _chdman.CreateDvdAsync(inputPath, chdPath, _compression, progress, cancellationToken);
+            }
 
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -367,18 +385,52 @@ public class FileConverter : IDisposable
         catch (OperationCanceledException)
         {
             Log("압축 취소중...", LogLevel.Error);
-            CleanupFiles(chdPath);
+            CleanupFiles(chdPath, temporaryCuePath ?? string.Empty);
             CurrentOutputPath = null;
 
             throw;
         }
         catch (Exception ex)
         {
-            CleanupFiles(chdPath);
+            CleanupFiles(chdPath, temporaryCuePath ?? string.Empty);
             CurrentOutputPath = null;
 
             return ConversionResult.Fail($"오류: {ex.Message}");
         }
+        finally
+        {
+            CleanupFiles(temporaryCuePath ?? string.Empty);
+        }
+    }
+
+    private static bool TryDetectRawCdTrackType(string isoPath, out string trackType)
+    {
+        trackType = string.Empty;
+
+        var fileInfo = new FileInfo(isoPath);
+
+        if (fileInfo.Length == 0 || fileInfo.Length % 2352 != 0)
+            return false;
+
+        using var stream = new FileStream(isoPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        Span<byte> header = stackalloc byte[16];
+
+        if (stream.Read(header) != header.Length
+            || header[0] != 0x00
+            || !header.Slice(1, 10).ToArray().All(value => value == 0xFF)
+            || header[11] != 0x00)
+        {
+            return false;
+        }
+
+        trackType = header[15] switch
+        {
+            1 => "MODE1/2352",
+            2 => "MODE2/2352",
+            _ => string.Empty
+        };
+
+        return !string.IsNullOrEmpty(trackType);
     }
 
     private static bool IsSingleTrackMode1(string cuePath)

@@ -165,12 +165,15 @@ public class PatchOrchestrator(Action<string, LogLevel> log, IProgress<ProgressI
 
         if (detected.Format == RomFormat.Bin)
         {
+            if (!autoCompress && !_binTrackCopier.HasMatchingCue(sourcePath))
+                return;
+
             _outputCuePath = await _binTrackCopier.CopyBinTracksAsync(sourcePath, outputDir, outputPath, _copiedTrackPaths, sourceIsTemporary);
             skipCompress = _outputCuePath is null;
         }
         else if (detected.Format == RomFormat.Ccd)
         {
-            _outputCcdPath = _ccdCompanionCopier.CopyCcd(sourcePath, outputPath, sourceIsTemporary);
+            _outputCcdPath = _ccdCompanionCopier.CopyCcd(sourcePath, outputPath, sourceIsTemporary, _copiedTrackPaths);
             skipCompress = _outputCcdPath is null;
         }
         else if (detected.Format == RomFormat.Gdi)

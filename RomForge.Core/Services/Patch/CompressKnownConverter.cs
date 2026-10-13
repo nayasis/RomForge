@@ -38,6 +38,12 @@ public class CompressKnownConverter(Action<string, LogLevel> log, IProgress<Prog
 
                         File.Delete(outputPath);
                         File.Delete(outputCcdPath!);
+
+                        foreach (var companionPath in copiedTrackPaths)
+                            if (File.Exists(companionPath))
+                                File.Delete(companionPath);
+
+                        copiedTrackPaths.Clear();
                     }
                     finally
                     {

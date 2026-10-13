@@ -8,6 +8,8 @@ namespace CD.Core.Services.Readers;
 public class CcdImgSubReader : IDiscImageReader
 {
     private const int SectorSize = 2352;
+    private const int SubSectorSize = 96;
+    private const int QChannelOffset = 12;
 
     private static readonly Regex TrackHeaderRegex = new(@"^\[TRACK\s+\d+\]$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex ModeRegex = new(@"^MODE\s*=\s*(\d+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -28,6 +30,7 @@ public class CcdImgSubReader : IDiscImageReader
     public DiscImage Read(string filePath)
     {
         var imgPath = ResolveSiblingPath(filePath, ".img");
+        var subPath = Path.ChangeExtension(filePath, ".sub");
         var lines = File.ReadAllLines(filePath);
         var imgLength = new FileInfo(imgPath).Length;
 
@@ -47,12 +50,12 @@ public class CcdImgSubReader : IDiscImageReader
             if (entries.Count == 0)
                 throw new InvalidDataException($"CCD 파일에서 유효한 [TRACK] 또는 [Entry] 섹션을 찾지 못했습니다: {filePath}");
 
-            if (entries.Count > 1)
+            if (entries.Count > 1 && !File.Exists(subPath))
                 throw new InvalidDataException(
                     $"[TRACK] 섹션이 없고 [Entry]로 확인된 트랙이 {entries.Count}개(멀티트랙)입니다. " +
-                    $"Entry 정보만으로는 트랙 간 pregap을 알 수 없어 정확한 변환이 불가능합니다: {filePath}");
+                    $"트랙 간 pregap을 복원하려면 SUB 파일이 필요합니다: {filePath}");
 
-            tracks = BuildDiscTracksFromEntries(entries, imgPath, totalImgSectors, filePath);
+            tracks = BuildDiscTracksFromEntries(entries, imgPath, File.Exists(subPath) ? subPath : null, totalImgSectors, filePath);
         }
 
         return new DiscImage { Tracks = tracks };
@@ -171,36 +174,109 @@ public class CcdImgSubReader : IDiscImageReader
         return tracks;
     }
 
-    private static List<DiscTrack> BuildDiscTracksFromEntries(List<(int Point, byte Control, long Plba)> entries, string imgPath, long totalImgSectors, string ccdFilePath)
+    private static List<DiscTrack> BuildDiscTracksFromEntries(List<(int Point, byte Control, long Plba)> entries, string imgPath, string? subPath, long totalImgSectors, string ccdFilePath)
     {
-        var (_, control, plba) = entries[0];
+        var pregaps = new int[entries.Count];
 
-        var trackStart = plba;
-        var lengthSectors = totalImgSectors - trackStart;
-
-        if (trackStart < 0 || lengthSectors <= 0)
-            throw new InvalidDataException(
-                $"Entry 기반 트랙의 섹터 범위가 IMG 파일 크기를 벗어나거나 비정상입니다 " +
-                $"(start={trackStart}, length={lengthSectors}, imgSectors={totalImgSectors}): {ccdFilePath}");
-
-        var isData = (control & 0x04) != 0;
-        var dataType = isData ? MapTrackMode(DetectDataMode(imgPath, trackStart)) : CueFormatStrings.Audio;
-        var streamOffset = trackStart * SectorSize;
-        var streamLength = lengthSectors * SectorSize;
-
-        return
-        [
-            new DiscTrack
+        if (subPath is not null)
+        {
+            for (var i = 0; i < entries.Count; i++)
             {
-                Number = 1,
+                var entry = entries[i];
+                var previousIndex1 = i == 0 ? 0 : entries[i - 1].Plba;
+                pregaps[i] = FindPregapFromSubchannel(subPath, entry.Point, entry.Plba, previousIndex1);
+            }
+        }
+
+        var tracks = new List<DiscTrack>();
+
+        for (var i = 0; i < entries.Count; i++)
+        {
+            var (point, control, index1) = entries[i];
+            var trackStart = index1 - pregaps[i];
+            var nextTrackStart = i + 1 < entries.Count
+                ? entries[i + 1].Plba - pregaps[i + 1]
+                : totalImgSectors;
+            var lengthSectors = nextTrackStart - index1;
+
+            if (trackStart < 0 || nextTrackStart > totalImgSectors || lengthSectors <= 0)
+                throw new InvalidDataException(
+                    $"Entry 기반 트랙의 섹터 범위가 IMG 파일 크기를 벗어나거나 비정상입니다 " +
+                    $"(start={trackStart}, length={lengthSectors}, imgSectors={totalImgSectors}): {ccdFilePath}");
+
+            var isData = (control & 0x04) != 0;
+            var dataType = isData ? MapTrackMode(DetectDataMode(imgPath, index1)) : CueFormatStrings.Audio;
+            var streamOffset = trackStart * SectorSize;
+            var streamLength = (nextTrackStart - trackStart) * SectorSize;
+
+            tracks.Add(new DiscTrack
+            {
+                Number = point,
                 DataType = dataType,
-                PregapSectors = 0,
+                PregapSectors = pregaps[i],
                 LengthSectors = (int)lengthSectors,
                 SourceSectorSize = SectorSize,
                 SubchannelSize = 0,
                 OpenSectorStream = () => OpenTrackStream(imgPath, streamOffset, streamLength)
+            });
+        }
+
+        return tracks;
+    }
+
+    private static int FindPregapFromSubchannel(string subPath, int trackNumber, long index1, long previousIndex1)
+    {
+        if (index1 <= previousIndex1)
+            return 0;
+
+        long pregapStart = index1;
+        var foundPregap = false;
+
+        using var stream = new FileStream(subPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+
+        for (var sector = index1 - 1; sector >= previousIndex1; sector--)
+        {
+            if (!TryReadSubchannelQ(stream, sector, out var track, out var index))
+                continue;
+
+            if (track == trackNumber && index == 0)
+            {
+                pregapStart = sector;
+                foundPregap = true;
+                continue;
             }
-        ];
+
+            if (foundPregap)
+                break;
+        }
+
+        return checked((int)(index1 - pregapStart));
+    }
+
+    private static bool TryReadSubchannelQ(Stream stream, long sector, out int track, out int index)
+    {
+        track = 0;
+        index = 0;
+
+        if (sector < 0 || (sector + 1) * SubSectorSize > stream.Length)
+            return false;
+
+        stream.Position = sector * SubSectorSize + QChannelOffset;
+        Span<byte> q = stackalloc byte[12];
+
+        if (stream.Read(q) != q.Length || (q[0] & 0x0F) != 1)
+            return false;
+
+        return TryDecodeBcd(q[1], out track) && TryDecodeBcd(q[2], out index);
+    }
+
+    private static bool TryDecodeBcd(byte value, out int decoded)
+    {
+        var high = value >> 4;
+        var low = value & 0x0F;
+        decoded = high * 10 + low;
+
+        return high <= 9 && low <= 9;
     }
 
     private static List<(int Point, byte Control, long Plba)> ParseEntries(string[] lines)
