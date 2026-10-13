@@ -8,6 +8,7 @@ public class TistoryDownloadItem(string url) : ProcessableItemBase("대기중")
     private string _fileName = GuessFileName(url);
     private long _fileSizeBytes;
     private string? _savedPath;
+    private string? _partialPath;
     private bool _isSelected = true;
 
     public string Url { get; } = url;
@@ -40,6 +41,12 @@ public class TistoryDownloadItem(string url) : ProcessableItemBase("대기중")
     {
         get => _savedPath;
         set => SetProperty(ref _savedPath, value);
+    }
+
+    public string? PartialPath
+    {
+        get => _partialPath;
+        set => SetProperty(ref _partialPath, value);
     }
 
     private static string GuessFileName(string url)

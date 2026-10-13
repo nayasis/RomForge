@@ -8,6 +8,7 @@ using RomForge.Core.Services.Util;
 using RomForge.Core.UI.Command;
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Threading.Channels;
 using System.Windows;
 using System.Windows.Input;
 
@@ -21,6 +22,16 @@ public class TistoryMainViewModel : ToolTabViewModel
     private bool _isBusy;
     private bool _autoExtractAfterDownload = AppConfig.Instance.Tistory.AutoExtractAfterDownload;
     private CancellationTokenSource _cts = new();
+
+    private const int MaxRetryCount = 5;
+    private static readonly TimeSpan[] RetryDelays =
+    [
+        TimeSpan.FromSeconds(5),
+        TimeSpan.FromSeconds(10),
+        TimeSpan.FromSeconds(30),
+        TimeSpan.FromMinutes(1),
+        TimeSpan.FromMinutes(5)
+    ];
 
     public ObservableCollection<LogEntry> LogEntries { get; } = [];
 
@@ -195,59 +206,92 @@ public class TistoryMainViewModel : ToolTabViewModel
             try
             {
                 var targetItems = FileItems.Where(i => i.IsSelected).ToList();
+                var downloadItems = targetItems.Where(i => i.Status != "완료").ToList();
                 int totalCount = targetItems.Count;
-                int successCount = 0;
-                object lockObj = new();
+                int successCount = totalCount - downloadItems.Count;
+                int remainingItems = downloadItems.Count;
 
-                AppendLog($"선택된 총 {totalCount}개의 첨부파일 다운로드를 시작합니다. (최대 5개 병렬)", LogLevel.Highlight);
+                AppendLog($"선택된 총 {totalCount}개의 첨부파일 다운로드를 시작합니다. (최대 5개 병렬, 파일당 최대 {MaxRetryCount}회 재시도)", LogLevel.Highlight);
 
-                var options = new ParallelOptions
+                var queue = Channel.CreateUnbounded<DownloadWork>();
+
+                foreach (var item in downloadItems)
+                    queue.Writer.TryWrite(new DownloadWork(item, 0));
+
+                if (remainingItems == 0)
+                    queue.Writer.TryComplete();
+
+                async Task ProcessQueueAsync()
                 {
-                    CancellationToken = _cts.Token,
-                    MaxDegreeOfParallelism = 5
-                };
-
-                await Parallel.ForEachAsync(targetItems, options, async (item, token) =>
-                {
-                    token.ThrowIfCancellationRequested();
-
-                    if (item.Status == "완료")
-                        return;
-
-                    item.Status = "다운로드중";
-                    item.Progress = 0;
-
-                    ScrollToItemRequested?.Invoke(item);
-
-                    var progress = new Progress<int>(p => item.Progress = p);
-
-                    try
+                    await foreach (var work in queue.Reader.ReadAllAsync(_cts.Token))
                     {
-                        var (savedPath, sizeBytes) = await TistoryAttachmentService.DownloadAsync(item.Url, SaveDirectory, item.FileName, progress, token);
+                        var item = work.Item;
+                        _cts.Token.ThrowIfCancellationRequested();
+                        bool overwriteExisting = item.Status == "실패";
 
-                        item.SavedPath = savedPath;
-                        item.FileName = Path.GetFileName(savedPath);
-                        item.FileSizeBytes = sizeBytes;
-                        item.Progress = 100;
-                        item.Status = "완료";
-
-                        lock (lockObj)
-                            successCount++;
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        throw;
-                    }
-                    catch (Exception)
-                    {
+                        item.Status = "다운로드중";
                         item.Progress = 0;
-                        item.Status = "실패";
+
+                        ScrollToItemRequested?.Invoke(item);
+
+                        var progress = new Progress<int>(p => item.Progress = p);
+
+                        try
+                        {
+                            var (savedPath, sizeBytes) = await TistoryAttachmentService.DownloadAsync(
+                                item.Url,
+                                SaveDirectory,
+                                item.FileName,
+                                progress,
+                                item.PartialPath,
+                                overwriteExisting,
+                                (resolvedPath, partialPath) =>
+                                {
+                                    item.FileName = Path.GetFileName(resolvedPath);
+                                    item.PartialPath = partialPath;
+                                },
+                                _cts.Token);
+
+                            item.SavedPath = savedPath;
+                            item.FileName = Path.GetFileName(savedPath);
+                            item.PartialPath = null;
+                            item.FileSizeBytes = sizeBytes;
+                            item.Progress = 100;
+                            item.Status = "완료";
+                            Interlocked.Increment(ref successCount);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            throw;
+                        }
+                        catch (Exception ex)
+                        {
+                            if (work.RetryCount < MaxRetryCount)
+                            {
+                                TimeSpan delay = RetryDelays[work.RetryCount];
+                                item.Status = "재시도 대기";
+                                item.Progress = 0;
+                                AppendLog($"[{item.FileName}] 다운로드 실패. {work.RetryCount + 1}/{MaxRetryCount}회 재시도까지 {FormatRetryDelay(delay)} 대기합니다. ({ex.Message})", LogLevel.Error);
+                                await Task.Delay(delay, _cts.Token);
+                                queue.Writer.TryWrite(new DownloadWork(item, work.RetryCount + 1));
+                                continue;
+                            }
+
+                            item.Progress = 0;
+                            item.Status = "실패";
+                            AppendLog($"[{item.FileName}] 다운로드 최종 실패: {ex.Message}", LogLevel.Error);
+                        }
+
+                        if (Interlocked.Decrement(ref remainingItems) == 0)
+                            queue.Writer.TryComplete();
                     }
-                });
+                }
+
+                await Task.WhenAll(Enumerable.Range(0, Math.Min(5, Math.Max(1, downloadItems.Count))).Select(_ => ProcessQueueAsync()));
 
                 AppendLog($"다운로드 작업 완료 (성공: {successCount} / 전체: {totalCount})", LogLevel.Ok);
 
-                if (AutoExtractAfterDownload)
+                if (AutoExtractAfterDownload && targetItems.All(item => item.Status == "완료"))
                 {
                     AppendLog("압축해제를 시작합니다...", LogLevel.Highlight);
 
@@ -256,17 +300,21 @@ public class TistoryMainViewModel : ToolTabViewModel
 
                     AppendLog($"압축해제 완료 (성공: {success} / 실패: {failCount} / 전체 그룹: {total})", failCount == 0 ? LogLevel.Ok : LogLevel.Error);
                 }
+                else if (AutoExtractAfterDownload)
+                {
+                    AppendLog("다운로드에 실패한 파일이 있어 압축 자동 해제를 실행하지 않습니다.", LogLevel.Error);
+                }
 
                 AppendLog("모든 작업이 종료되었습니다.", LogLevel.Highlight);
 
-                if (successCount > 0)
+                if (successCount > 0 && AppConfig.Instance.Patch.OpenOutputFolderWhenCompleted)
                     SaveDirectory.OpenFolder();
             }
             catch (OperationCanceledException)
             {
                 AppendLog("작업이 취소되었습니다.", LogLevel.Error);
 
-                foreach (var item in FileItems.Where(i => i.Status == "대기중" || i.Status == "다운로드중"))
+                foreach (var item in FileItems.Where(i => i.Status is "대기중" or "다운로드중" or "재시도 대기"))
                 {
                     item.Status = "취소";
                     item.Progress = 0;
@@ -286,6 +334,7 @@ public class TistoryMainViewModel : ToolTabViewModel
         var downloaded = targetItems.Where(i => i.Status == "완료" && !string.IsNullOrWhiteSpace(i.SavedPath)).ToList();
         var groups = downloaded.GroupBy(i => TistoryArchiveExtractor.GetGroupKey(i.FileName)).ToList();
         int totalGroups = groups.Count;
+        var extractedItems = new List<TistoryDownloadItem>();
 
         foreach (var group in groups)
         {
@@ -340,6 +389,9 @@ public class TistoryMainViewModel : ToolTabViewModel
                     item.Status = "압축해제완료";
                 }
 
+                if (allPaths.All(path => !File.Exists(path)))
+                    extractedItems.AddRange(items);
+
                 successCount++;
                 AppendLog($"[압축해제] {displayName} 완료", LogLevel.Ok);
             }
@@ -352,6 +404,12 @@ public class TistoryMainViewModel : ToolTabViewModel
                 }
                 AppendLog($"[압축해제 실패] {representative.FileName}: {ex.Message}", LogLevel.Error);
             }
+        }
+
+        if (extractedItems.Count > 0)
+        {
+            RemoveItems(extractedItems);
+            AppendLog($"[목록 정리] 압축 해제 후 삭제된 파일 {extractedItems.Count}개를 목록에서 제거했습니다.", LogLevel.Ok);
         }
 
         return (successCount, totalGroups);
@@ -370,4 +428,9 @@ public class TistoryMainViewModel : ToolTabViewModel
 
         Application.Current.Dispatcher.Invoke(() => LogEntries.Add(new LogEntry { Message = msg, Level = level }));
     }
+
+    private static string FormatRetryDelay(TimeSpan delay) =>
+        delay.TotalMinutes >= 1 ? $"{delay.TotalMinutes:0}분" : $"{delay.TotalSeconds:0}초";
+
+    private sealed record DownloadWork(TistoryDownloadItem Item, int RetryCount);
 }

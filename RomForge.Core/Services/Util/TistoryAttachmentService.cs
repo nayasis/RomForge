@@ -190,7 +190,7 @@ public static class TistoryAttachmentService
         return false;
     }
 
-    public static async Task<(string SavedPath, long FileSizeBytes)> DownloadAsync(string fileUrl, string saveDir, string preferredFileName, IProgress<int>? progress, CancellationToken ct = default)
+    public static async Task<(string SavedPath, long FileSizeBytes)> DownloadAsync(string fileUrl, string saveDir, string preferredFileName, IProgress<int>? progress, string? partialPath = null, bool overwriteExisting = false, Action<string, string>? onPathsResolved = null, CancellationToken ct = default)
     {
         Directory.CreateDirectory(saveDir);
 
@@ -202,42 +202,81 @@ public static class TistoryAttachmentService
                 preferredFileName = cached;
         }
 
+        bool canResume = !string.IsNullOrWhiteSpace(partialPath) && File.Exists(partialPath);
+        long existingBytes = canResume ? new FileInfo(partialPath!).Length : 0;
+        string? filePath = canResume ? partialPath![..^".download".Length] : null;
+        string? temporaryPath = canResume ? partialPath : null;
+
         using var request = new HttpRequestMessage(HttpMethod.Get, fileUrl);
 
         request.Headers.Add("User-Agent", UserAgent);
+
+        if (canResume && existingBytes > 0)
+            request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(existingBytes, null);
 
         using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
 
         response.EnsureSuccessStatusCode();
 
-        var fileName = response.Content.Headers.ContentDisposition?.FileName?.Trim('"');
-
-        if (string.IsNullOrWhiteSpace(fileName))
-            fileName = preferredFileName;
-
-        fileName = SanitizeFileName(fileName);
-
-        var filePath = GetUniquePath(Path.Combine(saveDir, fileName));
-        var totalBytes = response.Content.Headers.ContentLength ?? -1;
-        await using var httpStream = await response.Content.ReadAsStreamAsync(ct);
-        await using var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None);
-        var buffer = new byte[81920];
-        long readTotal = 0;
-        int read;
-
-        while ((read = await httpStream.ReadAsync(buffer, ct)) > 0)
+        if (!canResume)
         {
-            await fileStream.WriteAsync(buffer.AsMemory(0, read), ct);
+            var fileName = response.Content.Headers.ContentDisposition?.FileName?.Trim('"');
 
-            readTotal += read;
+            if (string.IsNullOrWhiteSpace(fileName))
+                fileName = preferredFileName;
 
-            if (totalBytes > 0)
-                progress?.Report((int)(readTotal * 100 / totalBytes));
+            fileName = SanitizeFileName(fileName);
+            filePath = Path.Combine(saveDir, fileName);
+
+            if (!overwriteExisting)
+                filePath = GetUniquePath(filePath);
+
+            temporaryPath = filePath + ".download";
+            onPathsResolved?.Invoke(filePath, temporaryPath);
+        }
+
+        bool append = canResume && response.StatusCode == System.Net.HttpStatusCode.PartialContent;
+
+        if (!append)
+            existingBytes = 0;
+
+        var totalBytes = response.Content.Headers.ContentLength is long contentLength
+            ? contentLength + existingBytes
+            : -1;
+        long readTotal = 0;
+
+        try
+        {
+            await using var httpStream = await response.Content.ReadAsStreamAsync(ct);
+            await using var fileStream = new FileStream(temporaryPath!, append ? FileMode.Append : FileMode.Create, FileAccess.Write, FileShare.None);
+            var buffer = new byte[81920];
+            int read;
+
+            while ((read = await httpStream.ReadAsync(buffer, ct)) > 0)
+            {
+                await fileStream.WriteAsync(buffer.AsMemory(0, read), ct);
+
+                readTotal += read;
+
+                if (totalBytes > 0)
+                    progress?.Report((int)((readTotal + existingBytes) * 100 / totalBytes));
+            }
+
+            if (totalBytes > 0 && readTotal + existingBytes != totalBytes)
+                throw new EndOfStreamException($"다운로드가 완료되기 전에 연결이 종료되었습니다. (수신: {readTotal + existingBytes:N0} / 예상: {totalBytes:N0} bytes)");
+
+            await fileStream.FlushAsync(ct);
+            await fileStream.DisposeAsync();
+            File.Move(temporaryPath!, filePath!, overwriteExisting);
+        }
+        catch
+        {
+            throw;
         }
 
         progress?.Report(100);
 
-        return (filePath, readTotal);
+        return (filePath!, readTotal + existingBytes);
     }
 
     private static HttpClient CreateHttpClient()
